@@ -3,6 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "description": "Myriad-MoE 神经透视控制台 — 对接 7.api_myriad_server.py 的 Web 客户端",
+  "license": "Apache-2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",

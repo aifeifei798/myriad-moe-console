@@ -240,3 +240,23 @@ MYRIAD_SERVER=/path/to/7.api_myriad_server.py npm run verify:server
 找不到时会**自动跳过**并打印说明（退出码 0），因此独立克隆本仓库时 `npm run verify` 不会失败。它还会用到 `fastapi` 与 `torch`，请在安装了后端依赖的 Python 环境下运行。
 
 技术栈：React 19 + TypeScript + Vite 8 + Tailwind CSS 4。KaTeX 与字体样式均为**本地依赖**，不依赖任何 CDN（内网环境可用）。
+
+---
+
+## ⚖️ 开源协议
+
+本项目采用 **[Apache-2.0 开源协议](LICENSE)**，与后端
+[Myriad-MoE-25K-Micro-Experts](https://github.com/aifeifei798/Myriad-MoE-25K-Micro-Experts) 保持一致。
+允许学术研究与商业应用，转载或衍生使用请保留原作者署名。
+
+## 📖 引用
+
+```bibtex
+@misc{feifei2026myriadconsole,
+  author  = {FeiFei (aifeifei798)},
+  title   = {{Myriad-MoE Neural Console: A Web Client for the 25,200 Micro-Expert Dual-Core MoE}},
+  year    = {2026},
+  publisher = {GitHub},
+  howpublished = {\url{https://github.com/aifeifei798/myriad-moe-console}}
+}
+```
