@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ChatMessage, ClientConfig, TelemetryStats } from './types/myriad';
+import { ChatMessage, ClientConfig, TelemetryStats, ServerCapability } from './types/myriad';
 import { fetchStats, streamChatCompletion, testConnection } from './services/myriadApi';
 import { mockSession, CircuitBreaker } from './services/mockSession';
 import { MyriadApiError } from './services/apiError';
@@ -64,6 +64,7 @@ export default function App() {
   const [isLoadingStats, setIsLoadingStats] = useState<boolean>(false);
   const [backendOnline, setBackendOnline] = useState<boolean>(false);
   const [engineReady, setEngineReady] = useState<boolean>(false);
+  const [capability, setCapability] = useState<ServerCapability | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [isMockMode, setIsMockMode] = useState<boolean>(mockSession.isActive());
   const [mockReason, setMockReason] = useState<string>('');
@@ -144,6 +145,7 @@ export default function App() {
       setBackendOnline(res.ok);
       // 服务活着 ≠ 模型就绪。加载期是正常状态，不该显示成红色报错。
       setEngineReady(res.ready === true);
+      setCapability(res.capability ?? null);
       setHealthError(res.ok ? null : res.error || null);
       if (res.ok) breakerRef.current.recordSuccess();
     };
@@ -177,6 +179,20 @@ export default function App() {
       const trimmed = text.trim();
       if (!trimmed) return;
       if (abortControllerRef.current) return; // 正在生成
+      // 只读令牌不能消耗算力生成，提前拦下（服务端也会 403 兜底）
+      if (capability?.permission === 'read') {
+        setMessages(prev => [
+          ...prev,
+          {
+            id: `msg-${Date.now()}-ro`,
+            role: 'assistant',
+            content: '🔒 当前使用的是**只读令牌**，无法调用模型生成回答。请在「配置中心」改用管理员 API Key。',
+            createdAt: Date.now(),
+            excludeFromContext: true,
+          },
+        ]);
+        return;
+      }
 
       // /clear 是纯本地操作：服务端无状态，真正的清空必须由客户端做。
       // 之前只把它当普通文本回复，messages 原封不动，下一轮照旧全量回传。
@@ -333,6 +349,9 @@ export default function App() {
       ? 'online'
       : 'loading';
 
+// 只读令牌：禁用一切写操作（神经手术 / 调频 / 插卡带 / 生成）
+const canWrite = !capability || capability.permission !== 'read';
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#070a10] text-slate-100 font-sans selection:bg-cyan-500/25 selection:text-cyan-200">
       <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden">
@@ -352,6 +371,8 @@ export default function App() {
           isMockMode={isMockMode}
           mockReason={mockReason}
           engineReady={engineReady}
+          capability={capability}
+          canWrite={canWrite}
           lastContext={lastContext}
           contextRounds={clampRounds(config.contextRounds)}
         />
@@ -370,6 +391,7 @@ export default function App() {
           onRefreshStats={refreshStats}
           isLoadingStats={isLoadingStats}
           isMockMode={isMockMode}
+          canWrite={canWrite}
         />
       </div>
 
@@ -378,6 +400,7 @@ export default function App() {
         onClose={() => setIsConfigOpen(false)}
         config={config}
         stats={stats}
+        capability={capability}
         onSaveConfig={handleSaveConfig}
       />
     </div>

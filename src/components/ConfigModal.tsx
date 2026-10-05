@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Settings, RefreshCw, Eye, EyeOff, ShieldCheck, AlertTriangle } from 'lucide-react';
-import { ClientConfig, TelemetryStats } from '../types/myriad';
+import { ClientConfig, TelemetryStats, ServerCapability } from '../types/myriad';
 import { testConnection } from '../services/myriadApi';
 import { MyriadApiError } from '../services/apiError';
 import { useClusterNames, useModelShape } from '../services/mockEngine';
@@ -11,6 +11,7 @@ interface ConfigModalProps {
   onClose: () => void;
   config: ClientConfig;
   stats: TelemetryStats | null;
+  capability?: ServerCapability | null;
   onSaveConfig: (newConfig: ClientConfig) => void;
 }
 
@@ -19,13 +20,18 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
   onClose,
   config,
   stats,
+  capability,
   onSaveConfig,
 }) => {
   const [formData, setFormData] = useState<ClientConfig>({ ...config });
   const [showApiKey, setShowApiKey] = useState<boolean>(false);
-  const [testResult, setTestResult] = useState<{ ok: boolean; latencyMs: number; error?: string; model?: string } | null>(
-    null,
-  );
+  const [testResult, setTestResult] = useState<{
+    ok: boolean;
+    latencyMs: number;
+    error?: string;
+    model?: string;
+    capability?: ServerCapability | null;
+  } | null>(null);
   const [isTesting, setIsTesting] = useState<boolean>(false);
 
   // 每次打开时同步最新的外部配置
@@ -118,9 +124,28 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="min-w-0 break-words">
-                    {testResult.ok
-                      ? `✅ 连通成功 (${testResult.latencyMs}ms)${testResult.model ? ` · ${testResult.model}` : ''}`
-                      : `❌ 连通失败: ${testResult.error}`}
+                    {testResult.ok ? (
+                      <>
+                        ✅ 连通成功 ({testResult.latencyMs}ms)
+                        {testResult.model ? ` · ${testResult.model}` : ''}
+                        {testResult.capability?.permission === 'read' && (
+                          <span className="ml-1 text-amber-300">
+                            · 只读令牌（写操作会被 403 拒绝）
+                          </span>
+                        )}
+                        {testResult.capability?.permission === 'admin' && (
+                          <span className="ml-1 text-emerald-300">· 管理员令牌</span>
+                        )}
+                        {testResult.capability?.authRequired === false && (
+                          <span className="ml-1 text-amber-300">· 服务端未开启鉴权</span>
+                        )}
+                        {testResult.capability?.ready === false && (
+                          <span className="ml-1 text-sky-300">· 模型仍在加载</span>
+                        )}
+                      </>
+                    ) : (
+                      `❌ 连通失败: ${testResult.error}`
+                    )}
                   </span>
                 </div>
               </div>
@@ -131,7 +156,13 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
           <div className="space-y-1.5">
             <label className="text-slate-300 font-medium flex justify-between">
               <span>API Key</span>
-              <span className="text-[10px] text-slate-500">服务端未设 --api-key 时可留空</span>
+              <span className="text-[10px] text-slate-500">
+                {capability?.permission === 'read'
+                  ? '当前：只读令牌'
+                  : capability?.permission === 'admin'
+                    ? '当前：管理员令牌'
+                    : '服务端未开鉴权时可留空'}
+              </span>
             </label>
             <div className="relative">
               <input

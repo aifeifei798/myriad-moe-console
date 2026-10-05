@@ -42,7 +42,7 @@ class StubLayer:
 
 
 class StubEngine:
-    def __init__(self, api_key=None):
+    def __init__(self, api_key=None, read_only_key=None):
         self.ready = True
         self.startup_error = None
         self.num_clusters = N_CLUSTERS
@@ -51,7 +51,8 @@ class StubEngine:
         self.cluster_names = [f"Cluster_{i:02d}" for i in range(N_CLUSTERS)]
         self._caged = {}
         self._plugged = {}
-        self.args = types.SimpleNamespace(api_key=api_key, max_len=512)
+        self.args = types.SimpleNamespace(api_key=api_key, read_only_key=read_only_key,
+                                          max_len=512, max_cartridge_mb=1)
         self.metrics = srv.Metrics()
         self.gate = types.SimpleNamespace(locked=lambda: False)
         self._slot_holder = None
@@ -155,6 +156,19 @@ class StubEngine:
     def reset_stats(self):
         pass
 
+    def plug_cartridge(self, cartridge, slot=16, source=None):
+        self._check_cluster(slot)
+        if isinstance(cartridge, (str, os.PathLike)):
+            if not os.path.exists(cartridge):
+                raise FileNotFoundError(f"找不到卡带: {cartridge}")
+            name = str(cartridge)
+        else:
+            name = source or "uploaded.pt"
+        self._plugged[slot] = {"name": name, "source": source or name,
+                               "plugged_ms": 1.0, "at": "2026-01-01 00:00:00"}
+        self._caged.pop(slot, None)
+        return {"slot": slot, "name": name, "elapsed_ms": 1.0}
+
     def encode_prompt(self, messages, chat_template_kwargs=None):
         return torch.tensor([[1, 2, 3]])
 
@@ -187,7 +201,7 @@ def main():
 
     print("\n[A] 无鉴权模式")
     srv.engine = StubEngine(api_key=None)
-    c = TestClient(srv.app)
+    c = TestClient(srv.app, raise_server_exceptions=False)
 
     r = c.get("/v1/models")
     check("GET /v1/models 返回 200 (客户端连通性探测目标)", r.status_code == 200, r.text[:200])
@@ -213,7 +227,7 @@ def main():
 
     print("\n[B] 鉴权模式：验证 401 会被客户端如实上报")
     srv.engine = StubEngine(api_key="sk-secret")
-    c = TestClient(srv.app)
+    c = TestClient(srv.app, raise_server_exceptions=False)
     r = c.get("/v1/models")
     check("无 Authorization 时 /v1/models 返回 401", r.status_code == 401, r.status_code)
     check("401 body 含 detail", "detail" in r.json(), r.text[:200])
@@ -228,7 +242,7 @@ def main():
 
     print("\n[C] 神经手术端点")
     srv.engine = StubEngine(api_key=None)
-    c = TestClient(srv.app)
+    c = TestClient(srv.app, raise_server_exceptions=False)
 
     r = c.post("/v1/myriad/clusters/16/cage")
     check("cage 返回 200", r.status_code == 200, r.text[:200])
@@ -437,6 +451,113 @@ def main():
     r3 = c.post("/v1/chat/completions", json=body3)
     frames3 = sse_payloads(r3.text)
     check("缺省 myriad 时无 myriad 帧", not any("myriad" in f for f in frames3))
+
+    print("\n[H] 权限分级：只读令牌")
+    srv.engine = StubEngine(api_key="sk-admin", read_only_key="sk-ro")
+    c = TestClient(srv.app, raise_server_exceptions=False)
+    AH = {"Authorization": "Bearer sk-admin"}
+    RH = {"Authorization": "Bearer sk-ro"}
+
+    # /v1/models 广告权限等级，供客户端禁用写按钮
+    m = c.get("/v1/models", headers=RH).json()["data"][0]["myriad"]
+    check("只读 token → permission=read", m["permission"] == "read", m["permission"])
+    check("只读 token → auth_required=true", m["auth_required"] is True)
+    check("read_only_available=true", m["read_only_available"] is True)
+    m2 = c.get("/v1/models", headers=AH).json()["data"][0]["myriad"]
+    check("管理员 token → permission=admin", m2["permission"] == "admin", m2["permission"])
+
+    # 未开鉴权时为 anonymous
+    srv.engine = StubEngine(api_key=None)
+    c2 = TestClient(srv.app, raise_server_exceptions=False)
+    m3 = c2.get("/v1/models").json()["data"][0]["myriad"]
+    check("未开鉴权 → permission=anonymous", m3["permission"] == "anonymous", m3["permission"])
+    check("未开鉴权 → auth_required=false", m3["auth_required"] is False)
+
+    # 只读可读
+    srv.engine = StubEngine(api_key="sk-admin", read_only_key="sk-ro")
+    c = TestClient(srv.app, raise_server_exceptions=False)
+    for path in ("/v1/myriad/stats", "/v1/myriad/catch", "/v1/myriad/clusters",
+                 "/v1/myriad/topk", "/v1/myriad/metrics", "/v1/models"):
+        rr = c.get(path, headers=RH)
+        check(f"只读 GET {path} → 200", rr.status_code == 200, rr.status_code)
+
+    # 只读被拒的写操作
+    writes = [
+        ("POST", "/v1/myriad/topk", {"k": 2, "layer": None}),
+        ("POST", "/v1/myriad/clusters/1/cage", None),
+        ("POST", "/v1/myriad/clusters/1/free", None),
+        ("POST", "/v1/myriad/snipe", {"layer": 1, "cluster": 2}),
+        ("POST", "/v1/myriad/engine", {"cuda_graph": False}),
+        ("POST", "/v1/myriad/stats/reset", None),
+        ("POST", "/v1/chat/completions", {"messages": [{"role": "user", "content": "hi"}]}),
+        ("POST", "/v1/completions", {"prompt": "hi"}),
+    ]
+    for method, path, body in writes:
+        rr = c.request(method, path, json=body, headers=RH) if body else c.request(method, path, headers=RH)
+        check(f"只读 {method} {path} → 403", rr.status_code == 403,
+              f"got {rr.status_code}: {rr.text[:120]}")
+    rr = c.post("/v1/myriad/cartridge/plug", data={"path": "x.pt", "slot": "16"}, headers=RH)
+    check("只读 plug → 403", rr.status_code == 403, rr.status_code)
+
+    r403 = c.post("/v1/myriad/topk", json={"k": 2, "layer": None}, headers=RH)
+    check("403 detail 说明是只读令牌", "只读" in r403.json().get("detail", ""), r403.text[:200])
+
+    # 管理员不被权限拦截（断言「不是 403」而非「200」：
+    # 某些端点会因桩引擎能力不足返回别的错误码，与权限无关）
+    for method, path, body in writes:
+        rr = c.request(method, path, json=body, headers=AH) if body else c.request(method, path, headers=AH)
+        check(f"管理员 {method} {path} 不被 403 拦截", rr.status_code != 403,
+              f"got {rr.status_code}: {rr.text[:120]}")
+    rr = c.post("/v1/myriad/topk", json={"k": 3, "layer": None}, headers=AH)
+    check("管理员 topk 实际生效", rr.status_code == 200 and rr.json().get("k") == 3, rr.text[:200])
+    rr = c.post("/v1/myriad/clusters/1/cage", headers=AH)
+    check("管理员 cage 实际生效", rr.status_code == 200, rr.text[:200])
+
+    # 只配 read-only 而没有 admin key → 所有人都是只读
+    srv.engine = StubEngine(api_key=None, read_only_key="sk-ro-only")
+    c3 = TestClient(srv.app, raise_server_exceptions=False)
+    RO_ONLY = {"Authorization": "Bearer sk-ro-only"}
+    check("仅配只读 key：只读 token 可读", c3.get("/v1/myriad/stats", headers=RO_ONLY).status_code == 200)
+    check("仅配只读 key：无 token → 401", c3.get("/v1/myriad/stats").status_code == 401)
+    check("仅配只读 key：管理员 key 也无效 → 401",
+          c3.get("/v1/myriad/stats", headers=AH).status_code == 401)
+    check("仅配只读 key：该 key 写操作 → 403",
+          c3.post("/v1/myriad/topk", json={"k": 2, "layer": None}, headers=RO_ONLY).status_code == 403)
+
+    print("\n[I] 卡带上传：大小限制与校验")
+    srv.engine = StubEngine(api_key=None)   # max_cartridge_mb=1
+    c4 = TestClient(srv.app, raise_server_exceptions=False)
+    ok_pt = b"\x80\x02" + b"\x00" * 64
+    rr = c4.post("/v1/myriad/cartridge/plug",
+                 files={"file": ("small.pt", ok_pt, "application/octet-stream")},
+                 data={"slot": "16"})
+    check("小文件上传 → 200", rr.status_code == 200, rr.text[:200])
+    check("返回 object=plugged", rr.json().get("object") == "myriad.cartridge.plugged", rr.text[:200])
+    check("返回文件名已净化", rr.json().get("name") == "small.pt", rr.json().get("name"))
+
+    big = b"\x00" * (2 * 1024 * 1024)   # 2MB > 1MB 上限
+    rr = c4.post("/v1/myriad/cartridge/plug",
+                 files={"file": ("big.pt", big, "application/octet-stream")},
+                 data={"slot": "16"})
+    check("超大文件 → 413", rr.status_code == 413, f"got {rr.status_code}")
+    check("413 detail 说明超限", "上限" in rr.json().get("detail", ""), rr.text[:200])
+
+    rr = c4.post("/v1/myriad/cartridge/plug",
+                 files={"file": ("empty.pt", b"", "application/octet-stream")},
+                 data={"slot": "16"})
+    check("空文件 → 400", rr.status_code == 400, rr.status_code)
+
+    rr = c4.post("/v1/myriad/cartridge/plug", data={"slot": "16"})
+    check("既无 file 也无 path → 400", rr.status_code == 400, rr.status_code)
+
+    rr = c4.post("/v1/myriad/cartridge/plug",
+                 files={"file": ("a.pt", ok_pt, "application/octet-stream")},
+                 data={"slot": "999"})
+    check("越界插槽 → 400", rr.status_code == 400, f"got {rr.status_code}")
+    check("越界插槽 detail 有说明", "插槽编号" in rr.json().get("detail", ""), rr.text[:200])
+
+    rr = c4.post("/v1/myriad/cartridge/plug", data={"path": "/no/such/file.pt", "slot": "16"})
+    check("路径不存在 → 404", rr.status_code == 404, f"got {rr.status_code}")
 
     print("\n[G] CORS 预检（浏览器直连必需）")
     r = c.options("/v1/chat/completions", headers={

@@ -1,4 +1,10 @@
-import { ClientConfig, TelemetryStats, CatchRadarResponse } from '../types/myriad';
+import {
+  ClientConfig,
+  TelemetryStats,
+  CatchRadarResponse,
+  ServerCapability,
+  PermissionRole,
+} from '../types/myriad';
 import { mockState } from './mockEngine';
 import { mockSession } from './mockSession';
 import { MyriadApiError, describeTransportError, extractDetail } from './apiError';
@@ -78,7 +84,14 @@ function canFallback(err: unknown, config: ClientConfig): boolean {
  */
 export async function testConnection(
   config: ClientConfig,
-): Promise<{ ok: boolean; latencyMs: number; error?: string; model?: string; ready?: boolean }> {
+): Promise<{
+  ok: boolean;
+  latencyMs: number;
+  error?: string;
+  model?: string;
+  ready?: boolean;
+  capability?: ServerCapability;
+}> {
   const t0 = performance.now();
   try {
     const res = await request(config, '/models', {
@@ -92,7 +105,18 @@ export async function testConnection(
       const myriad = json?.data?.[0]?.myriad;
       // layers 为 null 表示引擎尚未 ready（服务端未就绪时 info={} 的缺省值）
       const ready = Boolean(myriad && myriad.layers != null);
-      return { ok: true, latencyMs: latency, model: json?.data?.[0]?.id, ready };
+      return {
+        ok: true,
+        latencyMs: latency,
+        model: json?.data?.[0]?.id,
+        ready,
+        capability: {
+          ready,
+          permission: (myriad?.permission as PermissionRole) ?? 'anonymous',
+          authRequired: Boolean(myriad?.auth_required),
+          readOnlyAvailable: Boolean(myriad?.read_only_available),
+        },
+      };
     } catch {
       return { ok: true, latencyMs: latency, ready: undefined };
     }
@@ -213,6 +237,14 @@ export async function resetTelemetryStats(config: ClientConfig): Promise<any> {
   }
 }
 
+/**
+ * 卡带热插拔。支持两种来源：
+ *  - file：浏览器本地文件，走 multipart 上传（服务端 UploadFile）
+ *  - path：服务端进程工作目录下的相对/绝对路径
+ *
+ * onProgress 用于展示上传进度（fetch 无法上报上传进度，
+ * 因此只在能拿到 XHR 的场景使用 —— 见 plugCartridgeWithProgress）。
+ */
 export async function plugCartridge(
   config: ClientConfig,
   file: File | null,
@@ -221,9 +253,9 @@ export async function plugCartridge(
 ): Promise<any> {
   try {
     const formData = new FormData();
-    if (file) formData.append('file', file);
+    if (file) formData.append('file', file, file.name);
     if (path) formData.append('path', path);
-    formData.append('slot', slot.toString());
+    formData.append('slot', String(slot));
 
     // multipart 不能带 Content-Type，boundary 要交给浏览器自己生成
     const headers: Record<string, string> = {};
@@ -240,6 +272,66 @@ export async function plugCartridge(
     if (canFallback(err, config)) return mockState.plugCartridge(file?.name || path || 'custom_rules.pt', slot);
     throw err;
   }
+}
+
+/**
+ * 带上传进度的卡带植入（仅本地文件）。
+ * fetch 的 upload progress 不可观测，这里用 XHR 以便给用户反馈；
+ * 上传中/完成后都会正确退出模拟模式或抛出可读错误。
+ */
+export function plugCartridgeWithProgress(
+  config: ClientConfig,
+  file: File,
+  slot: number,
+  onProgress: (pct: number) => void,
+): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const url = `${config.baseUrl.replace(/\/+$/, '')}/myriad/cartridge/plug`;
+    const formData = new FormData();
+    formData.append('file', file, file.name);
+    formData.append('slot', String(slot));
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url, true);
+    if (config.apiKey && config.apiKey.trim()) {
+      xhr.setRequestHeader('Authorization', `Bearer ${config.apiKey.trim()}`);
+    }
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && e.total > 0) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = () => {
+      let body: any = null;
+      try {
+        body = JSON.parse(xhr.responseText);
+      } catch {
+        body = null;
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        mockSession.exit();
+        resolve(body);
+        return;
+      }
+      const detail = body?.detail;
+      const msg = typeof detail === 'string' ? detail : `HTTP ${xhr.status}`;
+      const err =
+        xhr.status === 403
+          ? new MyriadApiError(msg, { status: 403, detail: msg })
+          : MyriadApiError.http(xhr.status, xhr.statusText, msg);
+      // 403（只读令牌）不是传输层失败，绝不 mock 兜底
+      reject(err);
+    };
+    xhr.onerror = () => {
+      if (config.mockFallback) {
+        mockSession.enter('上传失败');
+        resolve(mockState.plugCartridge(file.name, slot));
+        return;
+      }
+      reject(MyriadApiError.transport('上传失败（网络错误）'));
+    };
+    xhr.ontimeout = () => reject(MyriadApiError.transport('上传超时'));
+    xhr.send(formData);
+  });
 }
 
 // ────────────────────────────────────────────────────────────────

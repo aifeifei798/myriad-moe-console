@@ -30,8 +30,11 @@ export class MyriadApiError extends Error {
 
   /** 服务端返回了非 2xx。 */
   static http(status: number, statusText: string, detail?: string): MyriadApiError {
-    const d = detail && detail.trim() ? detail.trim() : `HTTP ${status}`;
-    return new MyriadApiError(d, { status, detail: d, isTransport: false });
+    // detail 保留服务端原文（可能为空），不要在这里塞 "HTTP 403" ——
+    // 否则 describe() 里那些更有用的中文兜底文案就永远走不到了。
+    const raw = (detail ?? '').trim();
+    const fallback = `HTTP ${status}${statusText ? ` ${statusText}` : ''}`;
+    return new MyriadApiError(raw || fallback, { status, detail: raw, isTransport: false });
   }
 
   /** 展示给用户的完整说明，带上状态码与排查提示。 */
@@ -40,19 +43,23 @@ export class MyriadApiError extends Error {
       const tail = baseUrl ? `（Base URL: ${baseUrl}）` : '';
       return `无法连接推理服务${tail}：${this.message}`;
     }
-    if (this.status === 401) {
-      return 'API Key 无效或缺失（HTTP 401）。请在右上角「配置中心」检查 API Key。';
+    const d = this.detail.trim();
+    switch (this.status) {
+      case 401:
+        return d || 'API Key 无效或缺失（HTTP 401）。请在右上角「配置中心」检查 API Key。';
+      case 403:
+        return d || '当前令牌为只读权限，无权执行该写操作。请改用管理员 API Key。';
+      case 404:
+        return d || '端点不存在（HTTP 404）。Base URL 需要包含 /v1 前缀，例如 http://127.0.0.1:8000/v1';
+      case 413:
+        return d ? `上传内容过大（HTTP 413）：${d}` : '上传内容过大（HTTP 413）。';
+      case 503:
+        return d ? `推理服务尚未就绪（HTTP 503）：${d}` : '推理服务尚未就绪（HTTP 503）。';
+      case 400:
+        return d ? `请求被服务端拒绝（HTTP 400）：${d}` : '请求被服务端拒绝（HTTP 400）。';
+      default:
+        return d || this.message;
     }
-    if (this.status === 404) {
-      return '端点不存在（HTTP 404）。Base URL 需要包含 /v1 前缀，例如 http://127.0.0.1:8000/v1';
-    }
-    if (this.status === 503) {
-      return `推理服务尚未就绪（HTTP 503）：${this.detail}`;
-    }
-    if (this.status === 400) {
-      return `请求被服务端拒绝（HTTP 400）：${this.detail}`;
-    }
-    return this.detail;
   }
 }
 

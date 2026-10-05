@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Activity,
   Zap,
@@ -17,6 +17,8 @@ import {
   Flame,
   CheckCircle2,
   AlertCircle,
+  FileUp,
+  X,
 } from 'lucide-react';
 import { TelemetryStats, CatchRadarResponse, ClientConfig } from '../types/myriad';
 import {
@@ -28,6 +30,7 @@ import {
   resetTelemetryStats,
   fetchCatchRadar,
   plugCartridge,
+  plugCartridgeWithProgress,
 } from '../services/myriadApi';
 import { MyriadApiError } from '../services/apiError';
 import { useClusterNames, useModelShape } from '../services/mockEngine';
@@ -38,6 +41,8 @@ interface NeuralDashboardProps {
   onRefreshStats: () => void;
   isLoadingStats?: boolean;
   isMockMode?: boolean;
+  /** false = 只读令牌，所有写操作按钮禁用 */
+  canWrite?: boolean;
 }
 
 const pad2 = (n: number) => n.toString().padStart(2, '0');
@@ -48,6 +53,7 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
   onRefreshStats,
   isLoadingStats = false,
   isMockMode = false,
+  canWrite = true,
 }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'clusters' | 'topk' | 'radar'>('overview');
   const [actionNotice, setActionNotice] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
@@ -68,6 +74,10 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
   const [cartridgePath, setCartridgePath] = useState<string>('cartridge_gongfang.pt');
   const [cartridgeSlot, setCartridgeSlot] = useState<number>(16);
   const [isPlugging, setIsPlugging] = useState<boolean>(false);
+  // 本地文件上传
+  const [cartridgeFile, setCartridgeFile] = useState<File | null>(null);
+  const [uploadPct, setUploadPct] = useState<number | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 规模与宗门名一律以服务端遥测为准，改 --num-clusters 等启动参数也不会错位
   const clusterNames = useClusterNames(stats);
@@ -185,17 +195,32 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
   };
 
   const handlePlugCartridge = async () => {
-    if (!cartridgePath.trim()) return;
+    if (!cartridgeFile && !cartridgePath.trim()) return;
     setIsPlugging(true);
+    setUploadPct(cartridgeFile ? 0 : null);
     try {
-      const res = await plugCartridge(config, null, cartridgePath.trim(), cartridgeSlot);
-      showToast(`⚡ 卡带《${res.name || cartridgePath}》植入插槽 #${pad2(cartridgeSlot)} 成功`);
+      // 有本地文件走 multipart 上传，否则用服务端路径
+      const res = cartridgeFile
+        ? await plugCartridgeWithProgress(config, cartridgeFile, cartridgeSlot, setUploadPct)
+        : await plugCartridge(config, null, cartridgePath.trim(), cartridgeSlot);
+      const src = cartridgeFile ? '上传' : '路径';
+      showToast(`⚡ 卡带《${res.name || cartridgeFile?.name || cartridgePath}》${src}植入插槽 #${pad2(cartridgeSlot)} 成功`);
+      setCartridgeFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
       onRefreshStats();
     } catch (err: any) {
       showToast(describeError(err), 'error');
     } finally {
       setIsPlugging(false);
+      setUploadPct(null);
     }
+  };
+
+  const onPickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0] ?? null;
+    setCartridgeFile(f);
+    // 选了文件就自动填上文件名，方便确认
+    if (f) setCartridgePath(f.name);
   };
 
   const handleResetStats = async () => {
@@ -249,7 +274,8 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
           </button>
           <button
             onClick={handleResetStats}
-            title="清零统计指标"
+            disabled={!canWrite}
+            title={canWrite ? '清零统计指标' : '只读令牌禁止清零统计'}
             className="p-1.5 rounded-md hover:bg-slate-800 text-slate-400 hover:text-amber-400 transition-colors"
           >
             <RotateCcw className="w-3.5 h-3.5" />
@@ -303,6 +329,8 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
             <span className="text-[10px] text-slate-400 uppercase tracking-wider block mb-1">CUDA GRAPH 引擎</span>
             <button
               onClick={handleToggleCuda}
+              disabled={!canWrite}
+              title={canWrite ? undefined : '只读令牌禁止修改引擎'}
               className={`w-full mt-0.5 py-1 px-2 rounded flex items-center justify-between text-xs font-semibold transition-all ${
                 cudaGraph
                   ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
@@ -511,7 +539,8 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
 
               <button
                 onClick={handleSnipe}
-                disabled={isSniping}
+                disabled={isSniping || !canWrite}
+                title={canWrite ? undefined : '只读令牌禁止执行神经手术'}
                 className="w-full py-1.5 px-3 rounded bg-rose-900/70 hover:bg-rose-800/70 border border-rose-700/60 text-rose-100 font-medium text-xs transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50"
               >
                 {isSniping ? (
@@ -581,6 +610,7 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
                                     key={l}
                                     type="button"
                                     onClick={() => handleFreeLayer(c.id, l)}
+                                    disabled={!canWrite}
                                     title={`点击仅解封第 ${l} 层（其余层保持封杀）`}
                                     className="text-[9px] px-1 py-0.2 rounded bg-orange-950/70 border border-orange-800 text-orange-200 hover:bg-orange-900 hover:text-orange-100 transition-colors"
                                   >
@@ -602,6 +632,7 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
 
                       <button
                         onClick={() => handleToggleCage(c.id, caged)}
+                        disabled={!canWrite}
                         className={`px-2 py-1 rounded text-[10px] font-medium shrink-0 flex items-center gap-1 transition-colors ${
                           caged
                             ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-700 hover:bg-emerald-900'
@@ -717,7 +748,7 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
 
             <button
               onClick={handleApplyTopK}
-              disabled={isApplyingTopK}
+              disabled={isApplyingTopK || !canWrite}
               className="w-full py-1.5 px-3 rounded bg-cyan-700 hover:bg-cyan-600 text-cyan-100 font-medium text-xs transition-colors flex items-center justify-center gap-1.5 disabled:opacity-60"
             >
               {isApplyingTopK ? (
@@ -799,17 +830,76 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
             特区插槽卡带热插拔
           </span>
           <p className="text-[10px] text-slate-400">
-            原地写插槽权重，无需重启，CUDA Graph 保持常驻。路径相对于服务端进程的工作目录。
+            原地写插槽权重，无需重启，CUDA Graph 保持常驻。
           </p>
 
-          <div className="flex items-center gap-2 pt-1">
+          {/* 来源二选一：本地文件上传 / 服务端路径 */}
+          <div className="flex rounded bg-[#111726] border border-slate-800 p-0.5">
+            {(
+              [
+                ['upload', '本地文件上传'],
+                ['path', '服务端路径'],
+              ] as const
+            ).map(([key, label]) => {
+              const active = key === 'upload' ? !!cartridgeFile : !cartridgeFile;
+              return (
+                <button
+                  key={key}
+                  onClick={() => {
+                    if (key === 'upload') fileInputRef.current?.click();
+                    else {
+                      setCartridgeFile(null);
+                      if (fileInputRef.current) fileInputRef.current.value = '';
+                    }
+                  }}
+                  className={`flex-1 py-0.5 px-2 rounded text-[10px] font-medium transition-colors ${
+                    active ? 'bg-emerald-900 text-emerald-200' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pt,.pth,.bin,.safetensors"
+            onChange={onPickFile}
+            className="hidden"
+          />
+
+          {cartridgeFile ? (
+            <div className="flex items-center gap-2 bg-[#111726] border border-emerald-900/50 rounded px-2 py-1.5">
+              <FileUp className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] text-slate-200 truncate">{cartridgeFile.name}</p>
+                <p className="text-[9px] text-slate-500">{(cartridgeFile.size / 2 ** 20).toFixed(2)} MB</p>
+              </div>
+              <button
+                onClick={() => {
+                  setCartridgeFile(null);
+                  if (fileInputRef.current) fileInputRef.current.value = '';
+                }}
+                className="p-1 text-slate-500 hover:text-rose-400 shrink-0"
+                title="取消选择"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          ) : (
             <input
               type="text"
               value={cartridgePath}
               onChange={e => setCartridgePath(e.target.value)}
-              placeholder="卡带文件名 (如 cartridge_gongfang.pt)"
-              className="flex-1 bg-[#111726] border border-slate-800 rounded px-2 py-1 text-slate-200 text-xs focus:border-cyan-500 focus:outline-none min-w-0"
+              placeholder="服务端路径 (如 cartridge_gongfang.pt)"
+              className="w-full bg-[#111726] border border-slate-800 rounded px-2 py-1 text-slate-200 text-xs focus:border-cyan-500 focus:outline-none"
             />
+          )}
+
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-slate-400 shrink-0">插槽</span>
             <select
               value={cartridgeSlot}
               onChange={e => setCartridgeSlot(Number(e.target.value))}
@@ -824,13 +914,32 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
             </select>
             <button
               onClick={handlePlugCartridge}
-              disabled={isPlugging || !cartridgePath.trim()}
-              className="px-2.5 py-1 rounded bg-emerald-700 hover:bg-emerald-600 text-emerald-100 font-medium text-xs transition-colors shrink-0 flex items-center gap-1 disabled:opacity-50"
+              disabled={isPlugging || !canWrite || (!cartridgeFile && !cartridgePath.trim())}
+              title={canWrite ? undefined : '只读令牌禁止热插拔'}
+              className="flex-1 px-2.5 py-1 rounded bg-emerald-700 hover:bg-emerald-600 text-emerald-100 font-medium text-xs transition-colors flex items-center justify-center gap-1 disabled:opacity-50"
             >
-              <Zap className="w-3 h-3" />
-              热插拔
+              {isPlugging ? (
+                <>
+                  <RefreshCw className="w-3 h-3 animate-spin" />
+                  {uploadPct != null ? `上传中 ${uploadPct}%` : '植入中...'}
+                </>
+              ) : (
+                <>
+                  <Zap className="w-3 h-3" />
+                  热插拔
+                </>
+              )}
             </button>
           </div>
+
+          {uploadPct != null && isPlugging && (
+            <div className="h-1 w-full bg-slate-800 rounded overflow-hidden">
+              <div
+                className="h-full bg-emerald-500 transition-all duration-200"
+                style={{ width: `${uploadPct}%` }}
+              />
+            </div>
+          )}
 
           {plugged ? (
             <div className="text-[10px] text-emerald-400/90 bg-emerald-950/30 p-1.5 rounded border border-emerald-900/50 flex justify-between gap-2">

@@ -14,8 +14,9 @@ import {
   Sliders,
   ChevronRight,
   AlertTriangle,
+  Lock,
 } from 'lucide-react';
-import { ChatMessage, ClientConfig } from '../types/myriad';
+import { ChatMessage, ClientConfig, ServerCapability } from '../types/myriad';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { DeepThinkingCard } from './DeepThinkingCard';
 
@@ -37,6 +38,8 @@ interface ChatAreaProps {
   isMockMode: boolean;
   mockReason: string;
   engineReady: boolean;
+  capability?: ServerCapability | null;
+  canWrite: boolean;
   lastContext?: { rounds: number; kept: number; dropped: number; total: number } | null;
   contextRounds: number;
 }
@@ -134,6 +137,8 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   isMockMode,
   mockReason,
   engineReady,
+  capability,
+  canWrite,
   lastContext,
   contextRounds,
 }) => {
@@ -163,6 +168,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
   const handleSubmit = () => {
     if (!inputText.trim() || isGenerating) return;
+    // 只读令牌下仍允许发送：handleSendMessage 会给出明确提示而不是静默失败
     onSendMessage(inputText.trim());
     setInputText('');
     setShowCommands(false);
@@ -212,6 +218,23 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                 <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
                 {style.label}
               </span>
+              {capability?.permission === 'read' && (
+                <span
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono border bg-violet-950/60 text-violet-300 border-violet-800"
+                  title="当前令牌仅可读取遥测，写操作会被服务端拒绝 (403)"
+                >
+                  <Lock className="w-2.5 h-2.5" />
+                  只读
+                </span>
+              )}
+              {capability?.authRequired === false && status !== 'offline' && (
+                <span
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono border bg-amber-950/60 text-amber-300 border-amber-800"
+                  title="服务端未设置 --api-key / --read-only-key，任何人都可操作"
+                >
+                  未鉴权
+                </span>
+              )}
             </div>
             <p className="text-[11px] text-slate-400 font-mono hidden sm:block">
               模型: {config.model} · 双大核协同 · 25,200 微专家
@@ -255,6 +278,23 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           </button>
         </div>
       </div>
+
+      {/* 只读令牌提示 */}
+      {!canWrite && status === 'online' && (
+        <div className="px-4 sm:px-6 py-2 flex items-center gap-2 text-[11px] font-mono border-b bg-violet-950/30 border-violet-900/60 text-violet-200">
+          <Lock className="w-3.5 h-3.5 shrink-0" />
+          <span className="min-w-0 flex-1">
+            <b>只读模式</b>
+            <span className="opacity-75">
+              　可查看看板遥测，但无法生成回答或执行宗门禁闭 / 狙击 / 调频 / 热插拔。
+              需要这些能力请在「配置中心」改用管理员 API Key。
+            </span>
+          </span>
+          <button onClick={onOpenConfig} className="shrink-0 underline hover:no-underline">
+            切换 Key
+          </button>
+        </div>
+      )}
 
       {/* 模拟数据 / 离线 / 加载中横幅 —— 之前 mock 兜底是完全静默的 */}
       {(isMockMode || status === 'offline' || status === 'loading') && (

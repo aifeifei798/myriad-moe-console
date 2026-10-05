@@ -20,7 +20,9 @@ console.log('\n[1] 错误分类：只有传输层错误允许 mock 兜底');
 const authErr = MyriadApiError.http(401, 'Unauthorized', 'Invalid API key');
 check('401 被标记为应用错误 (isTransport=false)', authErr.isTransport === false);
 check('401 不应兜底', authErr.isTransport === false);
-check('401 提示检查 API Key', authErr.describe().includes('API Key'));
+check('401 优先透传服务端 detail', authErr.describe().includes('Invalid API key'), authErr.describe());
+check('401 无 detail 时回落到中文提示',
+  MyriadApiError.http(401, 'Unauthorized').describe().includes('API Key'));
 
 const notFound = MyriadApiError.http(404, 'Not Found');
 check('404 提示需要 /v1 前缀', notFound.describe().includes('/v1'));
@@ -170,6 +172,16 @@ check('未下发遥测仍正常完成', noTelemetry.onDone === true);
 const telSplitA = 'data: {"choices":[],"myriad":{"arts_core_pct":61.5,';
 const telSplitB = '"sci_core_pct":38.5}}\n\ndata: [DONE]\n\n';
 check('跨 chunk 的遥测帧被正确缓冲', parseSSE([telSplitA, telSplitB]).telemetry?.arts_core_pct === 61.5);
+
+console.log('\n[5] 403 / 413 文案：只读与超限必须是可读提示');
+const ro = MyriadApiError.http(403, 'Forbidden', '当前为只读令牌 (read-only)，禁止执行写操作。');
+check('403 识别为应用错误（不 mock 兜底）', ro.isTransport === false);
+check('403 透传服务端中文 detail', ro.describe().includes('只读'), ro.describe());
+const plain403 = MyriadApiError.http(403, 'Forbidden');
+check('403 无 detail 时给出默认提示', plain403.describe().includes('只读'), plain403.describe());
+const tooBig = MyriadApiError.http(413, 'Payload Too Large', '卡带过大: 900.0 MB > 上限 512 MB');
+check('413 提示上传过大', tooBig.describe().includes('过大'), tooBig.describe());
+check('413 不被 mock 兜底', tooBig.isTransport === false);
 
 console.log(`\n结果: ${pass} passed, ${fail} failed\n`);
 process.exit(fail > 0 ? 1 : 0);

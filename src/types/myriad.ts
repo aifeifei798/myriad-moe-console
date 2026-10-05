@@ -128,6 +128,20 @@ export interface CatchRadarResponse {
   }>;
 }
 
+/** 服务端下发的令牌权限等级。 */
+export type PermissionRole = 'admin' | 'read' | 'anonymous';
+
+export interface ServerCapability {
+  /** 当前 token 的权限等级。 */
+  permission: PermissionRole;
+  /** 服务端是否开启了鉴权。 */
+  authRequired: boolean;
+  /** 服务端是否配置了只读令牌。 */
+  readOnlyAvailable: boolean;
+  /** 模型是否已就绪。 */
+  ready: boolean;
+}
+
 export interface ClientConfig {
   baseUrl: string;
   apiKey: string;
