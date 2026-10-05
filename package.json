@@ -1,0 +1,36 @@
+{
+  "name": "myriad-moe-neural-console",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Myriad-MoE 神经透视控制台 — 对接 7.api_myriad_server.py 的 Web 客户端",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "verify:client": "node --experimental-strip-types scripts/verify.mts && node --experimental-strip-types scripts/verify_math.mts && node --experimental-strip-types scripts/verify_context.mts",
+    "verify:server": "../.venv/bin/python3 scripts/verify_server.py && ../.venv/bin/python3 scripts/verify_live_loading.py && ../.venv/bin/python3 scripts/verify_polling.py",
+    "verify": "npm run typecheck && npm run verify:client",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "katex": "^0.19.0",
+    "lucide-react": "^0.546.0",
+    "marked": "^18.0.14",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/typography": "^0.5.20",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/katex": "^0.16.8",
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.0"
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "name": "Myriad-MoE 神经透视控制台",
+  "description": "对接 7.api_myriad_server.py 的 Web 客户端：流式对话 + 思维链折叠 + 全息神经透视看板（宗门禁闭/单层狙击/弹性开核/卡带热插拔）",
+  "requestFramePermissions": []
+}
