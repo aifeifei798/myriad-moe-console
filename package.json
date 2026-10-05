@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "verify:client": "node --experimental-strip-types scripts/verify.mts && node --experimental-strip-types scripts/verify_math.mts && node --experimental-strip-types scripts/verify_context.mts",
-    "verify:server": "../.venv/bin/python3 scripts/verify_server.py && ../.venv/bin/python3 scripts/verify_live_loading.py && ../.venv/bin/python3 scripts/verify_polling.py",
+    "verify:server": "python3 scripts/verify_server.py && python3 scripts/verify_live_loading.py && python3 scripts/verify_polling.py",
     "verify": "npm run typecheck && npm run verify:client",
     "clean": "rm -rf dist"
   },

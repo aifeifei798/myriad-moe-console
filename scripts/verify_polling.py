@@ -16,11 +16,10 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent.parent
-BACKEND = Path(os.environ.get("MYRIAD_SERVER") or (REPO / "7.api_myriad_server.py"))
-if not BACKEND.exists():
-    print("\n[跳过] 未找到后端 7.api_myriad_server.py（服务端契约测试需要它）")
-    sys.exit(0)
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _backend import require_backend  # noqa: E402
+
+BACKEND = require_backend()
 
 TEMPLATE = r'''
 import importlib.util
@@ -96,7 +95,7 @@ PORT_READY = 8942
 def start(port: int, engine_src: str) -> subprocess.Popen:
     code = TEMPLATE % (str(BACKEND), engine_src, port)
     p = subprocess.Popen(
-        [str(REPO / ".venv/bin/python3"), "-c", code],
+        [sys.executable, "-c", code],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     for _ in range(80):

@@ -6,11 +6,10 @@ import sys
 import time
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent.parent
-BACKEND = Path(os.environ.get("MYRIAD_SERVER") or (REPO / "7.api_myriad_server.py"))
-if not BACKEND.exists():
-    print("\n[跳过] 未找到后端 7.api_myriad_server.py（服务端契约测试需要它）")
-    sys.exit(0)
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _backend import require_backend  # noqa: E402
+
+BACKEND = require_backend()
 
 LAUNCHER = r'''
 import sys, types, importlib.util
@@ -43,7 +42,7 @@ uvicorn.run(srv.app, host="127.0.0.1", port=8931, log_level="warning")
 ''' % str(BACKEND)
 
 proc = subprocess.Popen(
-    [str(REPO / ".venv/bin/python3"), "-c", LAUNCHER],
+    [sys.executable, "-c", LAUNCHER],
     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
 )
 try:

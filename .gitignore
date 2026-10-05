@@ -9,4 +9,5 @@ coverage/
 
 # 本地工具产物
 *.tsbuildinfo
-.DS_Store
+__pycache__/
+*.py[cod]

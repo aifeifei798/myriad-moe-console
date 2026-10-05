@@ -8,19 +8,10 @@ import sys
 import types
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _backend import require_backend  # noqa: E402
 
-# 后端不在本仓库内。默认找仓库上层的 7.api_myriad_server.py；
-# 也可用 MYRIAD_SERVER 显式指定。找不到就跳过而非报错，
-# 这样独立克隆前端仓库时 npm run verify:server 依然可用。
-BACKEND = Path(os.environ.get("MYRIAD_SERVER") or (REPO_ROOT / "7.api_myriad_server.py"))
-if not BACKEND.exists():
-    print("\n[跳过] 未找到后端 7.api_myriad_server.py")
-    print(f"       查找位置: {BACKEND}")
-    print("       本仓库仅含前端；服务端契约测试需要后端文件。")
-    print("       设置 MYRIAD_SERVER=/path/to/7.api_myriad_server.py 后重试。")
-    sys.exit(0)
-
+BACKEND = require_backend()
 sys.path.insert(0, str(BACKEND.parent))
 
 import importlib.util
