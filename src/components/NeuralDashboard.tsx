@@ -34,6 +34,7 @@ import {
 } from '../services/myriadApi';
 import { MyriadApiError } from '../services/apiError';
 import { useClusterNames, useModelShape } from '../services/mockEngine';
+import { useLang, type ZhKey } from '../lib/i18n';
 
 interface NeuralDashboardProps {
   stats: TelemetryStats | null;
@@ -55,6 +56,7 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
   isMockMode = false,
   canWrite = true,
 }) => {
+  const { t, lang } = useLang();
   const [activeTab, setActiveTab] = useState<'overview' | 'clusters' | 'topk' | 'radar'>('overview');
   const [actionNotice, setActionNotice] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
 
@@ -94,7 +96,7 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
   };
 
   const describeError = (err: any) =>
-    err instanceof MyriadApiError ? err.describe(config.baseUrl) : err?.message || '操作失败';
+    err instanceof MyriadApiError ? err.describe(config.baseUrl, lang) : err?.message || t('err.connFail');
 
   /**
    * 某个宗门当前被封杀的层号列表。
@@ -113,7 +115,7 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
     if (!stats) return;
     try {
       await toggleCudaGraph(config, !stats.cuda_graph);
-      showToast(`CUDA Graph 已切换为: ${!stats.cuda_graph ? '⚡ ON' : 'OFF'}`);
+      showToast(t('toast.cudaTo', { v: !stats.cuda_graph ? '⚡ ON' : 'OFF' }));
       onRefreshStats();
     } catch (err: any) {
       showToast(describeError(err), 'error');
@@ -125,7 +127,10 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
     try {
       await setTopK(config, topKValue, targetScope === 'all' ? null : selectedLayer);
       showToast(
-        `开核调频生效: ${targetScope === 'all' ? `全局 ${layers} 层统一` : `第 ${selectedLayer} 层`} 设置为 ${topKValue} 核`,
+        t('toast.topk', {
+          scope: targetScope === 'all' ? t('toast.topkAll', { l: layers }) : t('toast.topkLayer', { l: selectedLayer }),
+          k: topKValue,
+        }),
       );
       onRefreshStats();
     } catch (err: any) {
@@ -140,10 +145,10 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
     try {
       if (currentlyCaged) {
         await freeCluster(config, cid);
-        showToast(`🔓 宗门 ${label} 已刑满释放（其所有被封杀层均已恢复）`);
+        showToast(t('toast.freed', { label }));
       } else {
         await cageCluster(config, cid);
-        showToast(`🔒 宗门 ${label} 已关押，全 ${layers} 层路由打入冷宫`);
+        showToast(t('toast.caged', { label, l: layers }));
       }
       onRefreshStats();
     } catch (err: any) {
@@ -159,8 +164,8 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
       const still = res?.still_caged_layers ?? [];
       showToast(
         still.length > 0
-          ? `🔓 ${label} 第 ${pad2(layer)} 层已解封，仍有 ${still.length} 层处于封杀`
-          : `🔓 ${label} 第 ${pad2(layer)} 层已解封，该宗门已全部释放`,
+          ? t('toast.freeLayerSome', { label, layer: pad2(layer), n: still.length })
+          : t('toast.freeLayerAll', { label, layer: pad2(layer) }),
       );
       onRefreshStats();
     } catch (err: any) {
@@ -173,7 +178,7 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
     try {
       await snipeCluster(config, snipeLayer, snipeClusterId);
       showToast(
-        `🎯 Layer ${pad2(snipeLayer)} · #${pad2(snipeClusterId)} ${clusterNames[snipeClusterId] || ''} 已置零并封杀本层路由（注意：/free 会释放其全部层）`,
+        t('toast.sniped', { layer: pad2(snipeLayer), cid: pad2(snipeClusterId), name: clusterNames[snipeClusterId] || '' }),
       );
       onRefreshStats();
     } catch (err: any) {
@@ -203,8 +208,8 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
       const res = cartridgeFile
         ? await plugCartridgeWithProgress(config, cartridgeFile, cartridgeSlot, setUploadPct)
         : await plugCartridge(config, null, cartridgePath.trim(), cartridgeSlot);
-      const src = cartridgeFile ? '上传' : '路径';
-      showToast(`⚡ 卡带《${res.name || cartridgeFile?.name || cartridgePath}》${src}植入插槽 #${pad2(cartridgeSlot)} 成功`);
+      const src = cartridgeFile ? t('toast.pluggedUpload') : t('toast.pluggedPath');
+      showToast(t('toast.plugged', { n: res.name || cartridgeFile?.name || cartridgePath, src, s: pad2(cartridgeSlot) }));
       setCartridgeFile(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
       onRefreshStats();
@@ -226,7 +231,7 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
   const handleResetStats = async () => {
     try {
       await resetTelemetryStats(config);
-      showToast('🧹 全息遥测统计已清零');
+      showToast(t('toast.statsReset'));
       onRefreshStats();
     } catch (err: any) {
       showToast(describeError(err), 'error');
@@ -244,6 +249,13 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
 
   const plugged = stats?.plugged_cartridges?.[String(cartridgeSlot)];
 
+  const TABS: Array<{ key: 'overview' | 'clusters' | 'topk' | 'radar'; labelKey: ZhKey }> = [
+    { key: 'overview', labelKey: 'board.tabOverview' },
+    { key: 'clusters', labelKey: 'board.tabClusters' },
+    { key: 'topk', labelKey: 'board.tabTopk' },
+    { key: 'radar', labelKey: 'board.tabRadar' },
+  ];
+
   return (
     <div className="flex flex-col h-full bg-[#090d16] border-l border-slate-800/80 text-slate-200">
       {/* Header */}
@@ -254,12 +266,12 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
           </div>
           <div>
             <h2 className="text-sm font-semibold tracking-wider text-slate-100 flex items-center gap-1.5 font-mono">
-              MYRIAD-MoE{' '}
+              {t('board.title')}{' '}
               <span className="text-cyan-400 text-xs">
                 {totalExperts.toLocaleString()}
               </span>
             </h2>
-            <p className="text-[11px] text-slate-400 font-mono">全息神经透视监控看板</p>
+            <p className="text-[11px] text-slate-400 font-mono">{t('board.subtitle')}</p>
           </div>
         </div>
 
@@ -267,7 +279,7 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
           <button
             onClick={onRefreshStats}
             disabled={isLoadingStats}
-            title="刷新看板数据"
+            title={t('board.refreshTitle')}
             className="p-1.5 rounded-md hover:bg-slate-800 text-slate-400 hover:text-cyan-400 transition-colors"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isLoadingStats ? 'animate-spin text-cyan-400' : ''}`} />
@@ -275,7 +287,7 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
           <button
             onClick={handleResetStats}
             disabled={!canWrite}
-            title={canWrite ? '清零统计指标' : '只读令牌禁止清零统计'}
+            title={canWrite ? t('board.resetTitle') : t('board.resetTitleReadonly')}
             className="p-1.5 rounded-md hover:bg-slate-800 text-slate-400 hover:text-amber-400 transition-colors"
           >
             <RotateCcw className="w-3.5 h-3.5" />
@@ -287,7 +299,7 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
       {isMockMode && (
         <div className="px-3 py-1.5 text-[10px] font-mono bg-amber-950/40 border-b border-amber-800/50 text-amber-300 flex items-center gap-1.5">
           <AlertCircle className="w-3 h-3" />
-          以下数值为本地模拟，非真实遥测
+          {t('board.mockNote')}
         </div>
       )}
 
@@ -314,23 +326,23 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
         {/* 1. 核心状态 */}
         <div className="grid grid-cols-2 gap-2.5">
           <div className="bg-[#0e1424] border border-slate-800 rounded-lg p-2.5">
-            <span className="text-[10px] text-slate-400 uppercase tracking-wider block mb-1">显存已分配</span>
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider block mb-1">{t('board.vram')}</span>
             <div className="flex items-baseline gap-1">
               <span className="text-base font-bold text-slate-100">{vramMb.toLocaleString()}</span>
               <span className="text-[10px] text-slate-400">MB</span>
             </div>
             <div className="mt-1 text-[10px] text-slate-400 flex justify-between">
-              <span>峰值 {stats?.vram?.peak_allocated_mb || 0}M</span>
-              <span>保留 {stats?.vram?.reserved_mb || 0}M</span>
+              <span>{t('board.vramPeak', { v: stats?.vram?.peak_allocated_mb || 0 })}</span>
+              <span>{t('board.vramReserved', { v: stats?.vram?.reserved_mb || 0 })}</span>
             </div>
           </div>
 
           <div className="bg-[#0e1424] border border-slate-800 rounded-lg p-2.5">
-            <span className="text-[10px] text-slate-400 uppercase tracking-wider block mb-1">CUDA GRAPH 引擎</span>
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider block mb-1">{t('board.cudaEngine')}</span>
             <button
               onClick={handleToggleCuda}
               disabled={!canWrite}
-              title={canWrite ? undefined : '只读令牌禁止修改引擎'}
+              title={canWrite ? undefined : t('board.hotplugReadonly')}
               className={`w-full mt-0.5 py-1 px-2 rounded flex items-center justify-between text-xs font-semibold transition-all ${
                 cudaGraph
                   ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
@@ -341,30 +353,30 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
                 <Zap className="w-3 h-3 text-amber-400" />
                 {cudaGraph ? '⚡ ON' : 'OFF'}
               </span>
-              <span className="text-[10px] opacity-75">{cudaGraph ? '极速' : 'Eager'}</span>
+              <span className="text-[10px] opacity-75">{cudaGraph ? t('board.cudaFast') : 'Eager'}</span>
             </button>
           </div>
 
           <div className="bg-[#0e1424] border border-slate-800 rounded-lg p-2.5">
-            <span className="text-[10px] text-slate-400 uppercase tracking-wider block mb-1">推理槽位</span>
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider block mb-1">{t('board.slot')}</span>
             <div className="flex items-center gap-1.5 mt-0.5">
               <span className={`w-2 h-2 rounded-full ${slotState === 'busy' ? 'bg-amber-400 animate-ping' : 'bg-emerald-400'}`} />
               <span className={`font-semibold uppercase text-xs ${slotState === 'busy' ? 'text-amber-300' : 'text-emerald-400'}`}>
-                {slotState === 'busy' ? 'BUSY (推流中)' : 'IDLE (空闲)'}
+                {slotState === 'busy' ? t('board.slotBusy') : t('board.slotIdle')}
               </span>
             </div>
             <span className="text-[10px] text-slate-400 mt-1 block truncate">
-              {stats?.slot_holder ? `线程: ${stats.slot_holder}` : '单槽排队保障'}
+              {stats?.slot_holder ? t('board.slotThread', { t: stats.slot_holder }) : t('board.slotQueue')}
             </span>
           </div>
 
           <div className="bg-[#0e1424] border border-slate-800 rounded-lg p-2.5">
-            <span className="text-[10px] text-slate-400 uppercase tracking-wider block mb-1">平均吐字速率</span>
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider block mb-1">{t('board.tokSpeed')}</span>
             <div className="flex items-baseline gap-1">
               <span className="text-base font-bold text-cyan-400">{tokSpeed ? tokSpeed.toFixed(1) : '—'}</span>
               <span className="text-[10px] text-slate-400">tok/s</span>
             </div>
-            <span className="text-[10px] text-slate-400 mt-1 block">累计 {totalTokens.toLocaleString()} tokens</span>
+            <span className="text-[10px] text-slate-400 mt-1 block">{t('board.tokTotal', { t: totalTokens.toLocaleString() })}</span>
           </div>
         </div>
 
@@ -373,20 +385,20 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
           <div className="flex items-center justify-between mb-2">
             <span className="text-[11px] font-semibold text-slate-200 flex items-center gap-1.5">
               <Cpu className="w-3.5 h-3.5 text-blue-400" />
-              文理双大核实时占比
+              {t('board.artsSci')}
             </span>
-            <span className="text-[10px] text-slate-400">双核协同动态路由</span>
+            <span className="text-[10px] text-slate-400">{t('board.artsSciSub')}</span>
           </div>
 
           <div className="relative h-4 rounded-md overflow-hidden bg-slate-900 border border-slate-700/60 flex">
             <div style={{ width: `${artsPct}%` }} className="h-full bg-gradient-to-r from-blue-600 via-blue-500 to-sky-400 transition-all duration-500 flex items-center px-1.5">
               <span className="text-[9px] font-bold text-white drop-shadow-sm truncate">
-                {artsPct > 15 ? `文科 ${artsPct}%` : ''}
+                {artsPct > 15 ? `${t('board.artsShort')} ${artsPct}%` : ''}
               </span>
             </div>
             <div style={{ width: `${sciPct}%` }} className="h-full bg-gradient-to-r from-orange-500 via-amber-500 to-amber-400 transition-all duration-500 flex items-center px-1.5 justify-end">
               <span className="text-[9px] font-bold text-slate-950 drop-shadow-sm truncate">
-                {sciPct > 15 ? `理科 ${sciPct}%` : ''}
+                {sciPct > 15 ? `${t('board.sciShort')} ${sciPct}%` : ''}
               </span>
             </div>
           </div>
@@ -394,25 +406,18 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
           <div className="flex justify-between mt-2 text-[10px]">
             <div className="flex items-center gap-1 text-blue-400 font-medium">
               <span className="w-2 h-2 rounded-sm bg-blue-500" />
-              文科常识基盘 (Arts) <span className="text-slate-400">({artsPct}%)</span>
+              {t('board.artsFull')} <span className="text-slate-400">({artsPct}%)</span>
             </div>
             <div className="flex items-center gap-1 text-orange-400 font-medium">
               <span className="w-2 h-2 rounded-sm bg-orange-500" />
-              理科宏核 (Sci) <span className="text-slate-400">({sciPct}%)</span>
+              {t('board.sciFull')} <span className="text-slate-400">({sciPct}%)</span>
             </div>
           </div>
         </div>
 
         {/* Tabs */}
         <div className="flex items-center gap-1 p-1 bg-[#0c121e] border border-slate-800 rounded-lg">
-          {(
-            [
-              ['overview', '宗门热力'],
-              ['clusters', '禁闭所'],
-              ['topk', '弹性开核'],
-              ['radar', '神经雷达'],
-            ] as const
-          ).map(([key, label]) => (
+          {TABS.map(({ key, labelKey }) => (
             <button
               key={key}
               onClick={() => {
@@ -425,7 +430,7 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              {label}
+              {t(labelKey)}
             </button>
           ))}
         </div>
@@ -436,9 +441,9 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-semibold text-slate-200 flex items-center gap-1.5">
                 <Flame className="w-3.5 h-3.5 text-purple-400" />
-                宗门活跃热力排行 (Top 6)
+                {t('board.topTitle')}
               </span>
-              <span className="text-[10px] text-slate-400">微专家集群命中率</span>
+              <span className="text-[10px] text-slate-400">{t('board.topSub')}</span>
             </div>
 
             <div className="space-y-2">
@@ -452,16 +457,16 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
                         <span className="text-slate-200 font-medium truncate max-w-[130px]">{cluster.name}</span>
                         {cluster.caged && (
                           <span className="text-[9px] px-1 py-0.2 rounded bg-rose-950/80 border border-rose-800 text-rose-400">
-                            🔒 禁闭
+                            {t('board.cagedBadge')}
                           </span>
                         )}
                         {cluster.slot && (
                           <span className="text-[9px] px-1 py-0.2 rounded bg-emerald-950/80 border border-emerald-800 text-emerald-400">
-                            💿 插槽
+                            {t('board.slotBadge')}
                           </span>
                         )}
                       </div>
-                      <span className="text-slate-400">{cluster.hits.toLocaleString()} 拍</span>
+                      <span className="text-slate-400">{cluster.hits.toLocaleString()} {t('common.hits_unit')}</span>
                     </div>
                     <div className="h-1.5 w-full bg-slate-900 rounded overflow-hidden">
                       <div
@@ -479,16 +484,16 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
                 );
               })}
               {!stats?.top_clusters?.length && (
-                <p className="text-[10px] text-slate-500 py-2">暂无数据。请确认服务已启动并完成模型加载。</p>
+                <p className="text-[10px] text-slate-500 py-2">{t('common.noData')}</p>
               )}
             </div>
 
             <div className="pt-2 border-t border-slate-800/80 flex justify-between items-center text-[10px] text-slate-400">
               <span>
-                共 {clusters} 宗门 · {totalExperts.toLocaleString()} 微专家
+                {t('board.clustersTotal', { c: clusters, e: totalExperts.toLocaleString() })}
               </span>
               <button onClick={() => setActiveTab('clusters')} className="text-cyan-400 hover:underline flex items-center gap-0.5">
-                查看全部 {clusters} 宗门 <ChevronRight className="w-3 h-3" />
+                {t('board.viewAll', { c: clusters })} <ChevronRight className="w-3 h-3" />
               </button>
             </div>
           </div>
@@ -502,15 +507,15 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
               <div>
                 <span className="text-[11px] font-semibold text-slate-200 flex items-center gap-1.5">
                   <Crosshair className="w-3.5 h-3.5 text-rose-400" />
-                  单层狙击 (在第 N 层额外关押宗门 M)
+                  {t('board.snipeTitle')}
                 </span>
                 <p className="text-[10px] text-slate-400 mt-0.5">
-                  原地置零该层的 LoRA B 偏置并把本层路由打入冷宫，其余 {layers - 1} 层不受影响
+                  {t('board.snipeDesc', { n: layers - 1 })}
                 </p>
               </div>
 
               <div className="flex items-center gap-2">
-                <span className="text-[11px] text-slate-400 shrink-0">层号</span>
+                <span className="text-[11px] text-slate-400 shrink-0">{t('board.layerLabel')}</span>
                 <select
                   value={snipeLayer}
                   onChange={e => setSnipeLayer(Number(e.target.value))}
@@ -523,7 +528,7 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
                   ))}
                 </select>
 
-                <span className="text-[11px] text-slate-400 shrink-0">宗门</span>
+                <span className="text-[11px] text-slate-400 shrink-0">{t('board.clusterLabel')}</span>
                 <select
                   value={snipeClusterId}
                   onChange={e => setSnipeClusterId(Number(e.target.value))}
@@ -540,23 +545,22 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
               <button
                 onClick={handleSnipe}
                 disabled={isSniping || !canWrite}
-                title={canWrite ? undefined : '只读令牌禁止执行神经手术'}
+                title={canWrite ? undefined : t('board.snipeReadonly')}
                 className="w-full py-1.5 px-3 rounded bg-rose-900/70 hover:bg-rose-800/70 border border-rose-700/60 text-rose-100 font-medium text-xs transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50"
               >
                 {isSniping ? (
                   <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" /> 狙击中...
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" /> {t('board.sniping')}
                   </>
                 ) : (
                   <>
-                    <Crosshair className="w-3.5 h-3.5" /> 执行狙击
+                    <Crosshair className="w-3.5 h-3.5" /> {t('board.doSnipe')}
                   </>
                 )}
               </button>
 
               <p className="text-[9px] text-slate-500 leading-relaxed">
-                禁闭所列表里每个 <code className="text-slate-400">L07 ✕</code>{' '}
-                按钮可单独解封某一层；「释放全部」则会恢复该宗门的所有被封杀层。
+                {t('board.snipeTip')}
               </p>
             </div>
 
@@ -565,10 +569,10 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
               <div>
                 <span className="text-[11px] font-semibold text-slate-200 flex items-center gap-1.5">
                   <Lock className="w-3.5 h-3.5 text-rose-400" />
-                  {clusters} 宗门禁闭管理所
+                  {t('board.cageTitle', { c: clusters })}
                 </span>
                 <p className="text-[10px] text-slate-400 mt-0.5">
-                  全局禁闭会清零该宗门在所有 {layers} 层的权重并封杀其路由
+                  {t('board.cageDesc', { l: layers })}
                 </p>
               </div>
 
@@ -593,15 +597,15 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
                           <span className="font-medium truncate">{c.name}</span>
                         </div>
                         <div className="text-[9px] text-slate-400 flex items-center gap-1 mt-0.5 flex-wrap">
-                          <span>命中 {c.hits.toLocaleString()}</span>
+                          <span>{t('board.hitsLabel', { h: c.hits.toLocaleString() })}</span>
                           {c.cartridge && <span className="text-emerald-400 truncate">· 💿{c.cartridge}</span>}
                         </div>
                         {caged && (
                           <div className="mt-1 flex flex-wrap items-center gap-1">
-                            <span className="text-[9px] text-slate-400">封杀层</span>
+                            <span className="text-[9px] text-slate-400">{t('board.cagedLayers')}</span>
                             {isGlobal ? (
                               <span className="text-[9px] px-1 py-0.2 rounded bg-rose-900/70 border border-rose-700 text-rose-200">
-                                🔒 全局 · 全部 {layers} 层
+                                {t('board.cagedGlobal', { l: layers })}
                               </span>
                             ) : snipedLayers ? (
                               <>
@@ -611,19 +615,19 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
                                     type="button"
                                     onClick={() => handleFreeLayer(c.id, l)}
                                     disabled={!canWrite}
-                                    title={`点击仅解封第 ${l} 层（其余层保持封杀）`}
+                                    title={t('board.freeLayerTitle', { l })}
                                     className="text-[9px] px-1 py-0.2 rounded bg-orange-950/70 border border-orange-800 text-orange-200 hover:bg-orange-900 hover:text-orange-100 transition-colors"
                                   >
                                     L{pad2(l)} ✕
                                   </button>
                                 ))}
                                 <span className="text-[9px] text-orange-300/80">
-                                  🎯 单点解封
+                                  {t('board.snipeOnly')}
                                 </span>
                               </>
                             ) : (
                               <span className="text-[9px] px-1 py-0.2 rounded bg-rose-900/70 border border-rose-700 text-rose-200">
-                                🔒 已禁闭
+                                {t('board.cagedBadge')}
                               </span>
                             )}
                           </div>
@@ -638,15 +642,15 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
                             ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-700 hover:bg-emerald-900'
                             : 'bg-rose-950/80 text-rose-300 border border-rose-800 hover:bg-rose-900'
                         }`}
-                        title={caged ? '释放该宗门的全部被封杀层' : `在全部 ${layers} 层关禁闭`}
+                        title={caged ? t('board.releaseAllTitle') : t('board.cageBtnTitle', { l: layers })}
                       >
                         {caged ? (
                           <>
-                            <Unlock className="w-2.5 h-2.5" /> 释放全部
+                            <Unlock className="w-2.5 h-2.5" /> {t('board.releaseAll')}
                           </>
                         ) : (
                           <>
-                            <Lock className="w-2.5 h-2.5" /> 关禁闭
+                            <Lock className="w-2.5 h-2.5" /> {t('board.cageBtn')}
                           </>
                         )}
                       </button>
@@ -654,7 +658,7 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
                   );
                 })}
                 {!stats?.per_cluster?.length && (
-                  <p className="text-[10px] text-slate-500 py-2">暂无数据。请确认服务已启动并完成模型加载。</p>
+                  <p className="text-[10px] text-slate-500 py-2">{t('common.noData')}</p>
                 )}
               </div>
             </div>
@@ -667,20 +671,20 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
             <div>
               <span className="text-[11px] font-semibold text-slate-200 flex items-center gap-1.5">
                 <Sliders className="w-3.5 h-3.5 text-cyan-400" />
-                弹性开核调度台
+                {t('board.topkTitle')}
               </span>
               <p className="text-[10px] text-slate-400 mt-0.5">
-                实时调节异构金字塔每步激活的宗门小核数 (Top-K，1~10 核)
+                {t('board.topkDesc')}
               </p>
             </div>
 
             <div className="flex items-center gap-2">
-              <span className="text-[11px] text-slate-400">调节范围:</span>
+              <span className="text-[11px] text-slate-400">{t('board.scopeLabel')}</span>
               <div className="flex rounded bg-[#111726] border border-slate-800 p-0.5">
                 {(
                   [
-                    ['all', `全局 ${layers} 层统一`],
-                    ['layer', '单层精细调频'],
+                    ['all', t('board.scopeAll', { l: layers })],
+                    ['layer', t('board.scopeLayer')],
                   ] as const
                 ).map(([key, label]) => (
                   <button
@@ -698,7 +702,7 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
 
             {targetScope === 'layer' && (
               <div className="flex items-center gap-2">
-                <span className="text-[11px] text-slate-400 shrink-0">选择层号:</span>
+                <span className="text-[11px] text-slate-400 shrink-0">{t('board.pickLayer')}</span>
                 <select
                   value={selectedLayer}
                   onChange={e => setSelectedLayer(Number(e.target.value))}
@@ -706,7 +710,7 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
                 >
                   {Array.from({ length: layers }, (_, i) => (
                     <option key={i} value={i}>
-                      Layer {pad2(i)} (当前: {stats?.per_layer?.[i]?.top_k ?? '—'} 核)
+                      {t('board.layerOpt', { l: pad2(i), k: stats?.per_layer?.[i]?.top_k ?? '—' })}
                     </option>
                   ))}
                 </select>
@@ -715,8 +719,8 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
 
             <div className="space-y-1.5 pt-1">
               <div className="flex justify-between items-center text-xs">
-                <span className="text-slate-400">小核并发数 (Top-K):</span>
-                <span className="text-base font-bold text-cyan-300 font-mono">{topKValue} 核</span>
+                <span className="text-slate-400">{t('board.topkLabel')}</span>
+                <span className="text-base font-bold text-cyan-300 font-mono">{t('board.topkUnit', { k: topKValue })}</span>
               </div>
               <input
                 type="range"
@@ -727,21 +731,21 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
                 className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
               />
               <div className="flex justify-between text-[9px] text-slate-400 font-mono">
-                <span>1 (极限省算力)</span>
-                <span>4 (标准)</span>
-                <span>10 (全开)</span>
+                <span>{t('board.topkMin')}</span>
+                <span>{t('board.topkStd')}</span>
+                <span>{t('board.topkMax')}</span>
               </div>
             </div>
 
             <div className="p-2 rounded bg-[#111726] border border-slate-800 text-[10px] text-slate-400 space-y-1">
               <div className="flex justify-between">
-                <span>单层微专家并发:</span>
-                <span className="text-cyan-400 font-bold">{topKValue * expertsPerCluster} 微专家</span>
+                <span>{t('board.perLayerExperts')}</span>
+                <span className="text-cyan-400 font-bold">{t('board.expertsUnit', { n: topKValue * expertsPerCluster })}</span>
               </div>
               <div className="flex justify-between">
-                <span>全网络推理并发:</span>
+                <span>{t('board.wholeNet')}</span>
                 <span className="text-cyan-400 font-bold">
-                  {targetScope === 'all' ? `${topKValue * expertsPerCluster * layers} 专家槽位` : '分层配置生效'}
+                  {targetScope === 'all' ? t('board.expertSlots', { n: topKValue * expertsPerCluster * layers }) : t('board.perLayerActive')}
                 </span>
               </div>
             </div>
@@ -753,11 +757,11 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
             >
               {isApplyingTopK ? (
                 <>
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" /> 调频中...
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" /> {t('board.applying')}
                 </>
               ) : (
                 <>
-                  <Zap className="w-3.5 h-3.5" /> 即时应用调频
+                  <Zap className="w-3.5 h-3.5" /> {t('board.applyNow')}
                 </>
               )}
             </button>
@@ -771,9 +775,9 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
               <div>
                 <span className="text-[11px] font-semibold text-slate-200 flex items-center gap-1.5">
                   <Radar className="w-3.5 h-3.5 text-cyan-400" />
-                  {layers} 层逐层主导宗门雷达
+                  {t('board.radarTitle', { l: layers })}
                 </span>
-                <p className="text-[10px] text-slate-400 mt-0.5">实时扫描各层前向激活权重最大的宗门与异常波动</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">{t('board.radarDesc')}</p>
               </div>
               <button
                 onClick={handleLoadRadar}
@@ -789,7 +793,7 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
                 // dominant_cluster 为 -1 表示该层尚无前向激活数据
                 const domCluster = l.dominant_cluster ?? 0;
                 const hasData = l.dominant_cluster != null && l.dominant_cluster >= 0;
-                const domName = l.dominant_name || (hasData ? clusterNames[domCluster] : null) || '暂无激活数据';
+                const domName = l.dominant_name || (hasData ? clusterNames[domCluster] : null) || t('board.noActivation');
                 const isSuspicious = hasData && domCluster === 16;
                 return (
                   <div
@@ -808,16 +812,16 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
                       <span className="truncate">{domName}</span>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      <span className="text-slate-400">{l.activations || 0} 拍</span>
+                      <span className="text-slate-400">{l.activations || 0} {t('common.hits_unit')}</span>
                       {isSuspicious && (
-                        <span className="px-1 py-0.2 rounded bg-rose-900 text-rose-200 text-[9px] font-bold">🔥异常</span>
+                        <span className="px-1 py-0.2 rounded bg-rose-900 text-rose-200 text-[9px] font-bold">{t('board.abnormal')}</span>
                       )}
                     </div>
                   </div>
                 );
               })}
               {!radarData?.layers?.length && !stats?.per_layer?.length && (
-                <p className="text-[10px] text-slate-500 py-2">暂无数据。</p>
+                <p className="text-[10px] text-slate-500 py-2">{t('common.noData')}</p>
               )}
             </div>
           </div>
@@ -827,18 +831,18 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
         <div className="bg-[#0e1424] border border-slate-800 rounded-lg p-3 space-y-2">
           <span className="text-[11px] font-semibold text-slate-200 flex items-center gap-1.5">
             <Disc className="w-3.5 h-3.5 text-emerald-400" />
-            特区插槽卡带热插拔
+            {t('board.cartridgeTitle')}
           </span>
           <p className="text-[10px] text-slate-400">
-            原地写插槽权重，无需重启，CUDA Graph 保持常驻。
+            {t('board.cartridgeDesc')}
           </p>
 
           {/* 来源二选一：本地文件上传 / 服务端路径 */}
           <div className="flex rounded bg-[#111726] border border-slate-800 p-0.5">
             {(
               [
-                ['upload', '本地文件上传'],
-                ['path', '服务端路径'],
+                ['upload', t('board.srcUpload')],
+                ['path', t('board.srcPath')],
               ] as const
             ).map(([key, label]) => {
               const active = key === 'upload' ? !!cartridgeFile : !cartridgeFile;
@@ -883,7 +887,7 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
                   if (fileInputRef.current) fileInputRef.current.value = '';
                 }}
                 className="p-1 text-slate-500 hover:text-rose-400 shrink-0"
-                title="取消选择"
+                title={t('board.cancelPick')}
               >
                 <X className="w-3 h-3" />
               </button>
@@ -893,18 +897,18 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
               type="text"
               value={cartridgePath}
               onChange={e => setCartridgePath(e.target.value)}
-              placeholder="服务端路径 (如 cartridge_gongfang.pt)"
+              placeholder={t('board.pathPh')}
               className="w-full bg-[#111726] border border-slate-800 rounded px-2 py-1 text-slate-200 text-xs focus:border-cyan-500 focus:outline-none"
             />
           )}
 
           <div className="flex items-center gap-2">
-            <span className="text-[10px] text-slate-400 shrink-0">插槽</span>
+            <span className="text-[10px] text-slate-400 shrink-0">{t('board.slotLabel')}</span>
             <select
               value={cartridgeSlot}
               onChange={e => setCartridgeSlot(Number(e.target.value))}
               className="bg-[#111726] border border-slate-800 rounded px-1.5 py-1 text-slate-200 text-xs focus:border-cyan-500 focus:outline-none shrink-0"
-              title="目标插槽"
+              title={t('board.slotTarget')}
             >
               {Array.from({ length: clusters }, (_, i) => (
                 <option key={i} value={i}>
@@ -915,18 +919,18 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
             <button
               onClick={handlePlugCartridge}
               disabled={isPlugging || !canWrite || (!cartridgeFile && !cartridgePath.trim())}
-              title={canWrite ? undefined : '只读令牌禁止热插拔'}
+              title={canWrite ? undefined : t('board.hotplugReadonly')}
               className="flex-1 px-2.5 py-1 rounded bg-emerald-700 hover:bg-emerald-600 text-emerald-100 font-medium text-xs transition-colors flex items-center justify-center gap-1 disabled:opacity-50"
             >
               {isPlugging ? (
                 <>
                   <RefreshCw className="w-3 h-3 animate-spin" />
-                  {uploadPct != null ? `上传中 ${uploadPct}%` : '植入中...'}
+                  {uploadPct != null ? t('board.uploading', { p: uploadPct }) : t('board.implanting')}
                 </>
               ) : (
                 <>
                   <Zap className="w-3 h-3" />
-                  热插拔
+                  {t('board.hotplug')}
                 </>
               )}
             </button>
@@ -944,12 +948,12 @@ export const NeuralDashboard: React.FC<NeuralDashboardProps> = ({
           {plugged ? (
             <div className="text-[10px] text-emerald-400/90 bg-emerald-950/30 p-1.5 rounded border border-emerald-900/50 flex justify-between gap-2">
               <span className="truncate">
-                #{pad2(cartridgeSlot)} 已挂载: {plugged.name}
+                #{pad2(cartridgeSlot)} {t('board.mounted', { n: plugged.name })}
               </span>
               <span className="shrink-0">{plugged.plugged_ms ?? 0}ms</span>
             </div>
           ) : (
-            <p className="text-[10px] text-slate-500">插槽 #{pad2(cartridgeSlot)} 当前为空</p>
+            <p className="text-[10px] text-slate-500">{t('board.slotEmpty', { s: pad2(cartridgeSlot) })}</p>
           )}
         </div>
       </div>

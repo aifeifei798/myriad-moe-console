@@ -1,12 +1,42 @@
-/**
- * 统一的服务端错误类型。
- *
- * 核心区分是 `isTransport`：
- *  - true  → fetch 本身失败（服务没起来 / 网络不通 / 超时）。只有这类才允许 mock 兜底。
- *  - false → 服务端确实返回了响应但状态码不对（401/404/400/503/500）。这类**绝不兜底**，
- *            因为 mock 兜底会把「API Key 填错」「Base URL 写错」伪装成「一切正常」，
- *            是这个项目之前最大的问题。
- */
+export type Lang = 'zh' | 'en';
+
+function fmt(template: string, vars?: Record<string, string | number>): string {
+  if (!vars) return template;
+  return template.replace(/\{(\w+)\}/g, (m, k) => {
+    const v = vars[k];
+    return v === undefined ? m : String(v);
+  });
+}
+
+const ERR_ZH: Record<string, string> = {
+  transport: '无法连接推理服务{tail}：{msg}',
+  timeout: '请求超时（3s）',
+  network: '网络请求失败',
+  '401': 'API Key 无效或缺失（HTTP 401）。请在右上角「配置中心」检查 API Key。',
+  '403': '当前令牌为只读权限，无权执行该写操作。请改用管理员 API Key。',
+  '404': '端点不存在（HTTP 404）。Base URL 需要包含 /v1 前缀，例如 http://127.0.0.1:8000/v1',
+  '413': '上传内容过大（HTTP 413）。',
+  '413d': '上传内容过大（HTTP 413）：{d}',
+  '503': '推理服务尚未就绪（HTTP 503）。',
+  '503d': '推理服务尚未就绪（HTTP 503）：{d}',
+  '400': '请求被服务端拒绝（HTTP 400）。',
+  '400d': '请求被服务端拒绝（HTTP 400）：{d}',
+};
+
+const ERR_EN: Record<string, string> = {
+  transport: 'Cannot reach inference service{tail}: {msg}',
+  timeout: 'Request timed out (3s)',
+  network: 'Network request failed',
+  '401': 'Invalid or missing API key (HTTP 401). Check it in Settings (top right).',
+  '403': 'Read-only token: not allowed to run this write. Use an admin API key.',
+  '404': 'Endpoint not found (HTTP 404). Base URL must include the /v1 prefix, e.g. http://127.0.0.1:8000/v1',
+  '413': 'Upload too large (HTTP 413).',
+  '413d': 'Upload too large (HTTP 413): {d}',
+  '503': 'Inference service not ready yet (HTTP 503).',
+  '503d': 'Inference service not ready yet (HTTP 503): {d}',
+  '400': 'Rejected by server (HTTP 400).',
+  '400d': 'Rejected by server (HTTP 400): {d}',
+};
 export class MyriadApiError extends Error {
   readonly status: number | null;
   readonly detail: string;
@@ -37,29 +67,43 @@ export class MyriadApiError extends Error {
     return new MyriadApiError(raw || fallback, { status, detail: raw, isTransport: false });
   }
 
-  /** 展示给用户的完整说明，带上状态码与排查提示。 */
-  describe(baseUrl?: string): string {
+  /** 展示给用户的完整说明，带上状态码与排查提示。lang 默认为中文，保持老调用兼容。 */
+  describe(baseUrl?: string, lang?: Lang): string {
+    const T = lang === 'en' ? ERR_EN : ERR_ZH;
     if (this.isTransport) {
-      const tail = baseUrl ? `（Base URL: ${baseUrl}）` : '';
-      return `无法连接推理服务${tail}：${this.message}`;
+      const tail = baseUrl ? (lang === 'en' ? ` (Base URL: ${baseUrl})` : `（Base URL: ${baseUrl}）`) : '';
+      return fmt(T.transport, { tail, msg: this.translateTransportMsg(this.message, lang) });
     }
     const d = this.detail.trim();
     switch (this.status) {
       case 401:
-        return d || 'API Key 无效或缺失（HTTP 401）。请在右上角「配置中心」检查 API Key。';
+        return d || T['401'];
       case 403:
-        return d || '当前令牌为只读权限，无权执行该写操作。请改用管理员 API Key。';
+        return d || T['403'];
       case 404:
-        return d || '端点不存在（HTTP 404）。Base URL 需要包含 /v1 前缀，例如 http://127.0.0.1:8000/v1';
+        return d || T['404'];
       case 413:
-        return d ? `上传内容过大（HTTP 413）：${d}` : '上传内容过大（HTTP 413）。';
+        return d ? fmt(T['413d'], { d }) : T['413'];
       case 503:
-        return d ? `推理服务尚未就绪（HTTP 503）：${d}` : '推理服务尚未就绪（HTTP 503）。';
+        return d ? fmt(T['503d'], { d }) : T['503'];
       case 400:
-        return d ? `请求被服务端拒绝（HTTP 400）：${d}` : '请求被服务端拒绝（HTTP 400）。';
+        return d ? fmt(T['400d'], { d }) : T['400'];
       default:
         return d || this.message;
     }
+  }
+
+  /** 传输层 message 本身也可能是中文固定文案，做一次对照翻译。 */
+  private translateTransportMsg(msg: string, lang?: Lang): string {
+    if (lang !== 'en') return msg;
+    if (msg.includes('请求超时')) return ERR_EN.timeout;
+    if (msg.includes('网络请求失败')) return ERR_EN.network;
+    if (msg.includes('上传失败（网络错误）')) return 'Upload failed (network error)';
+    if (msg.includes('上传超时')) return 'Upload timed out';
+    if (msg.includes('流式连接意外中断')) return 'Stream interrupted unexpectedly (no usage / [DONE] received)';
+    if (msg.includes('服务端生成失败')) return 'Server generation failed';
+    if (msg.includes('不支持流式响应')) return 'Streaming unsupported in this browser (no ReadableStream)';
+    return msg;
   }
 }
 

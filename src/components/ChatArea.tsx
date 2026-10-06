@@ -19,6 +19,7 @@ import {
 import { ChatMessage, ClientConfig, ServerCapability } from '../types/myriad';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { DeepThinkingCard } from './DeepThinkingCard';
+import { useLang, LangToggle, type ZhKey } from '../lib/i18n';
 
 export type ConnStatus = 'online' | 'offline' | 'mock' | 'loading';
 
@@ -44,62 +45,40 @@ interface ChatAreaProps {
   contextRounds: number;
 }
 
-const SLASH_COMMANDS = [
-  { cmd: '/catch', desc: '扫描 28 层逐层主导宗门雷达' },
-  { cmd: '/stats', desc: '获取文理双核与全息遥测看板' },
-  { cmd: '/clusters', desc: '列出 20 宗门命中与禁闭状态' },
-  { cmd: '/show_k', desc: '显示各层开核数与并发配置' },
-  { cmd: '/set_k <层> <核数>', desc: '单层开核数调频' },
-  { cmd: '/set_k_all 2', desc: '全局 28 层统一开核数调频' },
-  { cmd: '/cage <宗门>', desc: '全局禁闭某宗门 (如 /cage 16)' },
-  { cmd: '/free <宗门>', desc: '释放某宗门 (会恢复其所有被封杀层)' },
-  { cmd: '/snipe <层> <宗门>', desc: '单层狙击 (如 /snipe 21 16)' },
-  { cmd: '/graph', desc: '切换 CUDA Graph 极速引擎' },
-  { cmd: '/clear', desc: '清空本地上下文' },
-  { cmd: '/help', desc: '查看全部 Myriad 命令指南' },
+const SLASH_CMDS: Array<{ cmdZh: string; cmdEn: string; descKey: ZhKey }> = [
+  { cmdZh: '/catch', cmdEn: '/catch', descKey: 'slash.catch' },
+  { cmdZh: '/stats', cmdEn: '/stats', descKey: 'slash.stats' },
+  { cmdZh: '/clusters', cmdEn: '/clusters', descKey: 'slash.clusters' },
+  { cmdZh: '/show_k', cmdEn: '/show_k', descKey: 'slash.show_k' },
+  { cmdZh: '/set_k <层> <核数>', cmdEn: '/set_k <layer> <k>', descKey: 'slash.set_k' },
+  { cmdZh: '/set_k_all 2', cmdEn: '/set_k_all 2', descKey: 'slash.set_k_all' },
+  { cmdZh: '/cage <宗门>', cmdEn: '/cage <cluster>', descKey: 'slash.cage' },
+  { cmdZh: '/free <宗门>', cmdEn: '/free <cluster>', descKey: 'slash.free' },
+  { cmdZh: '/snipe <层> <宗门>', cmdEn: '/snipe <layer> <cluster>', descKey: 'slash.snipe' },
+  { cmdZh: '/graph', cmdEn: '/graph', descKey: 'slash.graph' },
+  { cmdZh: '/clear', cmdEn: '/clear', descKey: 'slash.clear' },
+  { cmdZh: '/help', cmdEn: '/help', descKey: 'slash.help' },
 ];
-
-const STATUS_STYLE: Record<ConnStatus, { dot: string; chip: string; label: string }> = {
-  online: {
-    dot: 'bg-emerald-400',
-    chip: 'bg-emerald-950/60 text-emerald-400 border-emerald-800',
-    label: '服务在线',
-  },
-  mock: {
-    dot: 'bg-amber-400 animate-pulse',
-    chip: 'bg-amber-950/60 text-amber-300 border-amber-800',
-    label: '模拟演示中',
-  },
-  offline: {
-    dot: 'bg-rose-400',
-    chip: 'bg-rose-950/60 text-rose-300 border-rose-800',
-    label: '服务离线',
-  },
-  loading: {
-    dot: 'bg-sky-400 animate-pulse',
-    chip: 'bg-sky-950/60 text-sky-300 border-sky-800',
-    label: '模型加载中',
-  },
-};
 
 const pad2 = (n: number) => n.toString().padStart(2, '0');
 
 /** 单条回答的本次请求遥测条：文理占比 + CUDA Graph + 主导宗门。 */
 const TelemetryStrip: React.FC<{ telemetry: NonNullable<ChatMessage['telemetry']> }> = ({ telemetry }) => {
+  const { t } = useLang();
   const arts = telemetry.arts_core_pct;
   const sci = telemetry.sci_core_pct;
   const top = telemetry.top_clusters?.slice(0, 3) ?? [];
   return (
     <div className="mt-2 pt-2 border-t border-slate-800/60 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-mono text-slate-400">
-      <span className="text-slate-500">本次路由</span>
+      <span className="text-slate-500">{t('telemetry.thisRoute')}</span>
       {arts != null && sci != null && (
         <span className="flex items-center gap-1.5">
           <span className="w-16 h-1.5 rounded bg-slate-800 overflow-hidden flex shrink-0">
             <span className="h-full bg-blue-500" style={{ width: `${arts}%` }} />
             <span className="h-full bg-amber-500" style={{ width: `${sci}%` }} />
           </span>
-          <span className="text-blue-400">文 {arts}%</span>
-          <span className="text-amber-400">理 {sci}%</span>
+          <span className="text-blue-400">{t('telemetry.arts')} {arts}%</span>
+          <span className="text-amber-400">{t('telemetry.sci')} {sci}%</span>
         </span>
       )}
       {telemetry.cuda_graph != null && (
@@ -109,7 +88,7 @@ const TelemetryStrip: React.FC<{ telemetry: NonNullable<ChatMessage['telemetry']
       )}
       {top.length > 0 && (
         <span className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-slate-500">主导</span>
+          <span className="text-slate-500">{t('telemetry.leading')}</span>
           {top.map(c => (
             <span key={c.id} className={c.caged ? 'text-rose-400 line-through' : 'text-cyan-400'}>
               #{pad2(c.id)} {c.name}
@@ -142,6 +121,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   lastContext,
   contextRounds,
 }) => {
+  const { t, lang } = useLang();
   const [inputText, setInputText] = useState<string>('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showCommands, setShowCommands] = useState<boolean>(false);
@@ -186,6 +166,29 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     textareaRef.current?.focus();
   };
 
+  const STATUS_STYLE: Record<ConnStatus, { dot: string; chip: string; labelKey: ZhKey }> = {
+    online: {
+      dot: 'bg-emerald-400',
+      chip: 'bg-emerald-950/60 text-emerald-400 border-emerald-800',
+      labelKey: 'status.online',
+    },
+    mock: {
+      dot: 'bg-amber-400 animate-pulse',
+      chip: 'bg-amber-950/60 text-amber-300 border-amber-800',
+      labelKey: 'status.mock',
+    },
+    offline: {
+      dot: 'bg-rose-400',
+      chip: 'bg-rose-950/60 text-rose-300 border-rose-800',
+      labelKey: 'status.offline',
+    },
+    loading: {
+      dot: 'bg-sky-400 animate-pulse',
+      chip: 'bg-sky-950/60 text-sky-300 border-sky-800',
+      labelKey: 'status.loading',
+    },
+  };
+
   const style = STATUS_STYLE[status];
 
   // 最后一条用户消息之后是否存在可重新生成的助手回答
@@ -209,59 +212,60 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-sm font-semibold text-slate-100 font-mono tracking-wide">
-                Myriad-MoE 交互工作台
+                {t('header.title')}
               </h1>
               <span
                 className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono border ${style.chip}`}
                 title={statusDetail || undefined}
               >
                 <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
-                {style.label}
+                {t(style.labelKey)}
               </span>
               {capability?.permission === 'read' && (
                 <span
                   className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono border bg-violet-950/60 text-violet-300 border-violet-800"
-                  title="当前令牌仅可读取遥测，写操作会被服务端拒绝 (403)"
+                  title={t('header.readonlyTitle')}
                 >
                   <Lock className="w-2.5 h-2.5" />
-                  只读
+                  {t('header.readonly')}
                 </span>
               )}
               {capability?.authRequired === false && status !== 'offline' && (
                 <span
                   className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono border bg-amber-950/60 text-amber-300 border-amber-800"
-                  title="服务端未设置 --api-key / --read-only-key，任何人都可操作"
+                  title={t('header.noAuthTitle')}
                 >
-                  未鉴权
+                  {t('header.noAuth')}
                 </span>
               )}
             </div>
             <p className="text-[11px] text-slate-400 font-mono hidden sm:block">
-              模型: {config.model} · 双大核协同 · 25,200 微专家
+              {t('header.subtitle', { model: config.model })}
             </p>
           </div>
         </div>
 
         {/* Header Right Actions */}
         <div className="flex items-center gap-2">
+          <LangToggle compact />
           {messages.length > 0 && (
             <button
               onClick={onClearMessages}
-              title="清空对话记忆"
+              title={t('header.resetSessionTitle')}
               className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800/80 transition-colors text-xs flex items-center gap-1"
             >
               <Trash2 className="w-4 h-4" />
-              <span className="hidden md:inline font-mono text-[11px]">重置会话</span>
+              <span className="hidden md:inline font-mono text-[11px]">{t('header.resetSession')}</span>
             </button>
           )}
 
           <button
             onClick={onOpenConfig}
             className="p-1.5 rounded-lg text-slate-400 hover:text-cyan-400 hover:bg-slate-800/80 transition-colors text-xs flex items-center gap-1 font-mono"
-            title="配置 Base URL 与推理参数"
+            title={t('header.configCenterTitle')}
           >
             <Sliders className="w-4 h-4" />
-            <span className="hidden md:inline text-[11px]">配置中心</span>
+            <span className="hidden md:inline text-[11px]">{t('header.configCenter')}</span>
           </button>
 
           <button
@@ -271,10 +275,10 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                 ? 'bg-cyan-950/60 border-cyan-800 text-cyan-300'
                 : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:text-slate-200'
             }`}
-            title="展开/折叠神经透视监控看板"
+            title={t('header.toggleBoardTitle')}
           >
             <Terminal className="w-4 h-4 text-cyan-400" />
-            <span className="hidden sm:inline text-[11px]">{isSidebarOpen ? '收起看板' : '全息监控台'}</span>
+            <span className="hidden sm:inline text-[11px]">{isSidebarOpen ? t('header.collapseBoard') : t('header.expandBoard')}</span>
           </button>
         </div>
       </div>
@@ -284,14 +288,13 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         <div className="px-4 sm:px-6 py-2 flex items-center gap-2 text-[11px] font-mono border-b bg-violet-950/30 border-violet-900/60 text-violet-200">
           <Lock className="w-3.5 h-3.5 shrink-0" />
           <span className="min-w-0 flex-1">
-            <b>只读模式</b>
+            <b>{t('banner.readonlyTitle')}</b>
             <span className="opacity-75">
-              　可查看看板遥测，但无法生成回答或执行宗门禁闭 / 狙击 / 调频 / 热插拔。
-              需要这些能力请在「配置中心」改用管理员 API Key。
+              　{t('banner.readonlyBody')}
             </span>
           </span>
           <button onClick={onOpenConfig} className="shrink-0 underline hover:no-underline">
-            切换 Key
+            {t('common.switchKey')}
           </button>
         </div>
       )}
@@ -315,24 +318,24 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           <span className="min-w-0 flex-1">
             {isMockMode ? (
               <>
-                <b>当前为本地模拟数据</b>，并非真实模型输出
-                {mockReason ? <span className="opacity-75"> · 原因：{mockReason}</span> : null}
+                <b>{t('banner.mockTitle')}</b>，{t('banner.mockBody')}
+                {mockReason ? <span className="opacity-75"> · {t('banner.mockReason')}{mockReason}</span> : null}
               </>
             ) : status === 'loading' ? (
               <>
-                <b>推理服务已启动，模型权重仍在加载</b>
-                <span className="opacity-75"> · 加载完成后即可对话，看板会自动开始刷新</span>
+                <b>{t('banner.loadingTitle')}</b>
+                <span className="opacity-75"> · {t('banner.loadingBody')}</span>
               </>
             ) : (
               <>
-                <b>推理服务未连接</b>
+                <b>{t('banner.offlineTitle')}</b>
                 {statusDetail ? <span className="opacity-75"> · {statusDetail}</span> : null}
               </>
             )}
           </span>
           {status !== 'loading' && (
             <button onClick={onOpenConfig} className="shrink-0 underline hover:no-underline">
-              打开配置
+              {t('common.openConfig')}
             </button>
           )}
         </div>
@@ -348,24 +351,24 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
             <div className="space-y-2">
               <h2 className="text-xl font-bold tracking-tight text-slate-100 font-mono">
-                Myriad-MoE 神经全息客户端
+                {t('empty.title')}
               </h2>
               <p className="text-xs text-slate-400 max-w-lg mx-auto leading-relaxed">
-                已对接本地私有化部署的 25,200 微专家大模型服务。支持全息神经透视、思维链折叠推演、逐层开核与宗门实时禁闭。
+                {t('empty.desc')}
               </p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-w-xl mx-auto pt-2 text-left font-mono">
               <button
-                onClick={() => onSendMessage('测试文理双核算力协同，推导快速排序并给出复杂度评估')}
+                onClick={() => onSendMessage(t('empty.card1Prompt'))}
                 className="p-3 rounded-xl bg-[#0d1322] border border-slate-800 hover:border-cyan-700/60 hover:bg-[#101729] transition-all text-xs group text-left"
               >
                 <div className="font-semibold text-slate-200 group-hover:text-cyan-300 flex items-center gap-1.5 mb-1">
                   <Cpu className="w-3.5 h-3.5 text-blue-400" />
-                  文理双核算力测试
+                  {t('empty.card1Title')}
                 </div>
                 <div className="text-[11px] text-slate-400">
-                  评估文科常识基盘与理科宏核的动态算力分配与数学推导
+                  {t('empty.card1Desc')}
                 </div>
               </button>
 
@@ -375,10 +378,10 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
               >
                 <div className="font-semibold text-slate-200 group-hover:text-cyan-300 flex items-center gap-1.5 mb-1">
                   <Terminal className="w-3.5 h-3.5 text-cyan-400" />
-                  执行 /catch 神经雷达扫描
+                  {t('empty.card2Title')}
                 </div>
                 <div className="text-[11px] text-slate-400">
-                  检测 28 层网络中各层激活拍数与主导宗门，排查异常波动
+                  {t('empty.card2Desc')}
                 </div>
               </button>
 
@@ -388,10 +391,10 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
               >
                 <div className="font-semibold text-slate-200 group-hover:text-cyan-300 flex items-center gap-1.5 mb-1">
                   <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-                  查看全息看板 (/stats)
+                  {t('empty.card3Title')}
                 </div>
                 <div className="text-[11px] text-slate-400">
-                  获取当前文理占比、Top 宗门活跃排行及 CUDA Graph 状态
+                  {t('empty.card3Desc')}
                 </div>
               </button>
 
@@ -401,10 +404,10 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
               >
                 <div className="font-semibold text-slate-200 group-hover:text-cyan-300 flex items-center gap-1.5 mb-1">
                   <Zap className="w-3.5 h-3.5 text-amber-400" />
-                  检查 20 宗门状态 (/clusters)
+                  {t('empty.card4Title')}
                 </div>
                 <div className="text-[11px] text-slate-400">
-                  查看各宗门总命中数、禁闭所关押状态及特区卡带挂载
+                  {t('empty.card4Desc')}
                 </div>
               </button>
             </div>
@@ -436,22 +439,22 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                       <span className="font-semibold text-cyan-400 tracking-wide">{config.model}</span>
                       {msg.isCommand && (
                         <span className="px-1.5 py-0.2 rounded bg-cyan-950 text-cyan-300 border border-cyan-800 text-[10px]">
-                          ⚡ 指令响应
+                          {t('msg.commandBadge')}
                         </span>
                       )}
                       {msg.excludeFromContext && (
                         <span
                           className="px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 border border-slate-700 text-[10px]"
-                          title="本地提示，不会作为上下文回传给模型"
+                          title={t('msg.localBadgeTitle')}
                         >
-                          本地提示
+                          {t('msg.localBadge')}
                         </span>
                       )}
                     </div>
 
                     <div className="flex items-center gap-2 text-slate-500">
                       {msg.metrics?.ttft_sec != null && (
-                        <span title="首字延迟">TTFT {msg.metrics.ttft_sec.toFixed(2)}s</span>
+                        <span title={t('msg.ttftTitle')}>TTFT {msg.metrics.ttft_sec.toFixed(2)}s</span>
                       )}
                       {msg.metrics?.tokens_per_sec ? (
                         <span>{msg.metrics.tokens_per_sec} tok/s</span>
@@ -462,7 +465,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                       <button
                         onClick={() => handleCopy(msg.id, msg.content)}
                         className="opacity-0 group-hover:opacity-100 p-1 hover:text-slate-300 transition-opacity"
-                        title="复制内容"
+                        title={t('common.copyContent')}
                       >
                         {copiedId === msg.id ? (
                           <Check className="w-3.5 h-3.5 text-emerald-400" />
@@ -487,7 +490,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                 ) : msg.isStreaming ? (
                   <div className="flex items-center gap-1.5 py-2 text-xs font-mono text-cyan-400">
                     <span className="inline-block w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
-                    <span>正在调度神经微专家生成解答...</span>
+                    <span>{t('msg.streaming')}</span>
                   </div>
                 ) : null}
 
@@ -495,7 +498,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                   <button
                     onClick={() => handleCopy(msg.id, msg.content)}
                     className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 p-1 text-cyan-200 hover:text-white transition-opacity"
-                    title="复制消息"
+                    title={t('common.copyMessage')}
                   >
                     {copiedId === msg.id ? (
                       <Check className="w-3 h-3 text-emerald-300" />
@@ -526,7 +529,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
               className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono bg-slate-800/70 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
             >
               <ChevronRight className="w-3 h-3 rotate-180" />
-              重新生成
+              {t('msg.regenerate')}
             </button>
           </div>
         )}
@@ -538,20 +541,23 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       {showCommands && (
         <div className="absolute bottom-24 left-4 right-4 sm:left-6 sm:right-6 max-w-3xl mx-auto z-20 bg-[#0c121e] border border-cyan-800/80 rounded-xl shadow-2xl p-2 font-mono text-xs">
           <div className="px-3 py-1.5 text-[10px] text-cyan-400 font-bold uppercase tracking-wider border-b border-slate-800 flex justify-between">
-            <span>Myriad-MoE 原生斜杠指令</span>
-            <span>点击填入输入框</span>
+            <span>{t('slash.title')}</span>
+            <span>{t('slash.hint')}</span>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 p-1 max-h-48 overflow-y-auto">
-            {SLASH_COMMANDS.map(item => (
-              <button
-                key={item.cmd}
-                onClick={() => handleSelectCommand(item.cmd)}
-                className="p-2 rounded-lg hover:bg-cyan-950/60 hover:text-cyan-300 text-left transition-colors flex items-center justify-between group"
-              >
-                <span className="font-semibold text-cyan-400 group-hover:underline">{item.cmd}</span>
-                <span className="text-[10px] text-slate-400 truncate ml-2">{item.desc}</span>
-              </button>
-            ))}
+            {SLASH_CMDS.map(item => {
+              const cmd = lang === 'en' ? item.cmdEn : item.cmdZh;
+              return (
+                <button
+                  key={item.cmdZh}
+                  onClick={() => handleSelectCommand(cmd)}
+                  className="p-2 rounded-lg hover:bg-cyan-950/60 hover:text-cyan-300 text-left transition-colors flex items-center justify-between group"
+                >
+                  <span className="font-semibold text-cyan-400 group-hover:underline">{cmd}</span>
+                  <span className="text-[10px] text-slate-400 truncate ml-2">{t(item.descKey)}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
@@ -569,7 +575,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                 setShowCommands(val.startsWith('/'));
               }}
               onKeyDown={handleKeyDown}
-              placeholder="发送消息，或输入 / 调用神经透视指令（如 /catch、/stats、/show_k）..."
+              placeholder={t('input.placeholder')}
               rows={1}
               className="w-full bg-transparent px-4 py-3.5 pr-24 text-slate-100 placeholder-slate-500 resize-none focus:outline-none text-[13.5px] leading-relaxed font-sans max-h-48"
             />
@@ -578,7 +584,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
               <button
                 type="button"
                 onClick={() => setShowCommands(!showCommands)}
-                title="常用指令列表"
+                title={t('input.commandsTitle')}
                 className="p-2 rounded-lg text-slate-400 hover:text-cyan-400 hover:bg-slate-800/80 transition-colors"
               >
                 <Terminal className="w-4 h-4" />
@@ -591,7 +597,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                   className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-medium text-xs flex items-center gap-1.5 transition-colors shadow-sm shadow-rose-900/40"
                 >
                   <Square className="w-3.5 h-3.5 fill-current" />
-                  <span className="font-mono text-[11px]">打断</span>
+                  <span className="font-mono text-[11px]">{t('input.interrupt')}</span>
                 </button>
               ) : (
                 <button
@@ -607,14 +613,14 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           </div>
 
           <div className="flex items-center justify-between mt-2 px-1 text-[11px] font-mono text-slate-500 gap-3">
-            <span className="truncate">Enter 提交 · Shift + Enter 换行 · 输入 / 唤出指令</span>
+            <span className="truncate">{t('input.hint')}</span>
             <div className="flex items-center gap-3 shrink-0">
               {lastContext && lastContext.dropped > 0 && (
                 <span
                   className="text-amber-400/90"
-                  title={`原 ${lastContext.total} 条消息，已裁剪为最近 ${lastContext.rounds} 轮（保留 ${lastContext.kept} 条）`}
+                  title={t('input.ctxTrimmedTitle', { totalMsg: lastContext.total, rounds: lastContext.rounds, kept: lastContext.kept })}
                 >
-                  上下文 {lastContext.rounds}/{contextRounds} 轮 · 已裁掉 {lastContext.dropped} 条
+                  {t('input.ctxTrimmed', { rounds: lastContext.rounds, total: contextRounds, dropped: lastContext.dropped })}
                 </span>
               )}
               <span className="text-slate-500 hidden sm:inline truncate max-w-[40%]">

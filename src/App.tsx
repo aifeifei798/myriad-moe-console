@@ -7,6 +7,7 @@ import { buildContext, DEFAULT_ROUNDS, clampRounds } from './lib/contextWindow';
 import { ChatArea, type ConnStatus } from './components/ChatArea';
 import { NeuralDashboard } from './components/NeuralDashboard';
 import { ConfigModal } from './components/ConfigModal';
+import { useLang } from './lib/i18n';
 
 const DEFAULT_CONFIG: ClientConfig = {
   baseUrl: 'http://127.0.0.1:8000/v1',
@@ -44,6 +45,7 @@ function sanitizeHistory(raw: string): ChatMessage[] {
 }
 
 export default function App() {
+  const { t, lang } = useLang();
   const [config, setConfig] = useState<ClientConfig>(() => {
     try {
       const saved = localStorage.getItem('myriad_client_config');
@@ -129,18 +131,18 @@ export default function App() {
       // 注意：这里**不**写入任何假数据。fetchStats 只有在传输层失败
       // 且用户显式开启了 mock 时才会返回模拟数据。
       if (err instanceof MyriadApiError && !err.isTransport) {
-        setHealthError(err.describe(config.baseUrl));
+        setHealthError(err.describe(config.baseUrl, lang));
       }
     } finally {
       setIsLoadingStats(false);
     }
-  }, [config, isGenerating, engineReady]);
+  }, [config, isGenerating, engineReady, lang]);
 
   // 连通性探测
   useEffect(() => {
     let isMounted = true;
     const checkHealth = async () => {
-      const res = await testConnection(config);
+      const res = await testConnection(config, lang);
       if (!isMounted) return;
       setBackendOnline(res.ok);
       // 服务活着 ≠ 模型就绪。加载期是正常状态，不该显示成红色报错。
@@ -155,7 +157,7 @@ export default function App() {
       isMounted = false;
       clearInterval(interval);
     };
-  }, [config.baseUrl, config.apiKey]);
+  }, [config.baseUrl, config.apiKey, lang]);
 
   // 遥测轮询
   useEffect(() => {
@@ -186,7 +188,7 @@ export default function App() {
           {
             id: `msg-${Date.now()}-ro`,
             role: 'assistant',
-            content: '🔒 当前使用的是**只读令牌**，无法调用模型生成回答。请在「配置中心」改用管理员 API Key。',
+            content: t('app.readonlyBlock'),
             createdAt: Date.now(),
             excludeFromContext: true,
           },
@@ -202,7 +204,7 @@ export default function App() {
           {
             id: `msg-${now}`,
             role: 'assistant',
-            content: '🧹 上下文已清空。服务端为无状态模式，对话历史由本客户端维护。',
+            content: t('app.cleared'),
             createdAt: now,
             isCommand: true,
             excludeFromContext: true,
@@ -285,10 +287,10 @@ export default function App() {
           },
           onError: err => {
             const detail =
-              err instanceof MyriadApiError ? err.describe(config.baseUrl) : err?.message || '连接失败';
+              err instanceof MyriadApiError ? err.describe(config.baseUrl, lang) : err?.message || t('err.connFail');
             patchAssistant({
               isStreaming: false,
-              content: `❌ 生成失败：${detail}`,
+              content: t('app.genFail', { d: detail }),
               // 标记为不参与上下文，避免下一轮把报错文本喂回模型
               excludeFromContext: true,
             });
@@ -301,7 +303,7 @@ export default function App() {
         abortControllerRef.current = null;
       }
     },
-    [config, refreshStats],
+    [config, refreshStats, t, lang],
   );
 
   const handleStopGeneration = () => {

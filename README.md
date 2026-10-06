@@ -1,19 +1,22 @@
-# Myriad-MoE 神经透视控制台
+# Myriad-MoE Neural Console
 
-Myriad-MoE 25,200 微专家大模型的 Web 客户端，对接一个 OpenAI 兼容的推理服务（参考实现为 `7.api_myriad_server.py`）。
+> **中文版**: [README.zh-CN.md](README.zh-CN.md)
 
-- **左侧**：ChatGPT 风格对话区，支持思维链折叠、斜杠指令、重新生成
-- **右侧**：全息神经透视看板 —— 文理双核占比、宗门热力、禁闭所 / 单层狙击、弹性开核、逐层雷达、卡带热插拔
+Web client for the Myriad-MoE 25,200 micro-expert model, talking to an OpenAI-compatible inference service (reference implementation: `7.api_myriad_server.py`).
 
-> 本仓库**只含前端**。后端推理服务与模型权重（`myriad_*.pt`）不在这里，需要单独部署。
+- **Left**: ChatGPT-style conversation area with foldable chain-of-thought, slash commands, regeneration
+- **Right**: holographic neural introspection board — arts/sci core split, cluster heatmap, cage / single-layer snipe, elastic Top-K, per-layer radar, cartridge hot-plug
+- **Language**: 中文 / English toggle in the top bar (persisted in `localStorage`)
+
+> This repo contains **only the frontend**. The backend inference service and model weights (`myriad_*.pt`) live elsewhere and must be deployed separately.
 
 ---
 
-## 快速开始
+## Quick start
 
-### 1. 启动后端
+### 1. Start the backend
 
-在服务端仓库根目录：
+In the server repo root:
 
 ```bash
 uv pip install --python .venv/bin/python fastapi "uvicorn[standard]"
@@ -23,153 +26,153 @@ uv pip install --python .venv/bin/python fastapi "uvicorn[standard]"
   --backend-script 6.chat_myriad_25k_lora_fast_more_mirco.py
 ```
 
-模型加载需要一段时间，期间：
+Model loading takes a while. During that window:
 
 - `GET /health` → `{"status": "loading", "ready": false}`
-- `GET /v1/models` → **200**，但 `data[0].myriad.layers` 为 `null`（客户端据此判断「加载中」）
+- `GET /v1/models` → **200**, but `data[0].myriad.layers` is `null` (the client uses this to detect "loading")
 - `GET /v1/chat/completions` → **503** + `startup_error`
-- 所有 `GET/POST /v1/myriad/*` → **503** + `模型正在加载中 ...`
+- All `GET/POST /v1/myriad/*` → **503** + `model is still loading ...`
 
-客户端顶部徽章此时显示 **模型加载中**（蓝色转圈）而非红色报错，加载完成后自动转为「服务在线」，看板开始刷新。
+The top badge shows **Loading model** (blue spinner) instead of a red error, then flips to "Online" automatically once loading finishes and the board starts refreshing.
 
-可选鉴权：加 `--api-key sk-xxx`，之后所有请求需带 `Authorization: Bearer sk-xxx`。
+Optional auth: pass `--api-key sk-xxx`, after which every request needs `Authorization: Bearer sk-xxx`.
 
-### 2. 启动前端
+### 2. Start the frontend
 
 ```bash
 npm install
 npm run dev
 ```
 
-打开 http://localhost:3000
+Open http://localhost:3000
 
-### 3. 连接
+### 3. Connect
 
-点右上角「配置中心」，确认 **API Base URL** 为：
+Click **Settings** (top right) and confirm **API Base URL** is:
 
 ```
 http://127.0.0.1:8000/v1
 ```
 
-**必须包含 `/v1` 前缀** —— 服务端所有业务端点都挂在 `/v1` 下。填错会得到 404，客户端会明确提示这一点。
+The **`/v1` prefix is mandatory** — every business endpoint lives under `/v1`. A missing prefix yields 404, which the client explains explicitly.
 
-填好 API Key（若后端启用了鉴权）后点「测试连通」。
+Fill in the API Key (if the backend has auth enabled) and hit **Test**.
 
 ---
 
-## 离线演示模式
+## Offline demo mode
 
-没有 GPU 时也能完整体验控制台 UI：
+No GPU? You can still explore the full console UI:
 
-1. 配置中心 → 勾选 **离线演示兜底 (Mock Fallback)**
-2. 顶栏徽章变为「模拟演示中」，聊天区和看板都会显示醒目的**模拟数据横幅**
+1. Settings → check **Offline mock fallback**
+2. The top badge switches to "Mock demo", and both chat and board show a prominent **mock data banner**
 
-该模式**默认关闭**，且只在「完全连不上服务」时启用。以下真实错误**不会**被兜底，会如实报错：
+This mode is **off by default** and only kicks in when the service is completely unreachable. These real errors are **never** mocked and always surface as-is:
 
-| 情况 | HTTP | 客户端行为 |
+| Situation | HTTP | Client behavior |
 |---|---|---|
-| API Key 错误 | 401 | 报错，提示去配置中心检查 Key |
-| Base URL 漏了 `/v1` | 404 | 报错，明确提示需要 `/v1` 前缀 |
-| 模型尚未加载完成 | 503 | 报错，显示服务端返回的 `startup_error` |
-| 参数非法（层号/宗门号越界等） | 400 | 报错，显示服务端 `detail` |
-| 生成线程异常（CUDA OOM 等） | SSE `error` 帧 | 报错，不会伪装成空回答 |
+| Wrong API key | 401 | Error, points you to Settings to check the key |
+| Base URL missing `/v1` | 404 | Error, explicitly mentions the `/v1` prefix |
+| Model still loading | 503 | Error, shows the server's `startup_error` |
+| Illegal params (layer/cluster out of range, …) | 400 | Error, shows the server `detail` |
+| Generation thread crash (CUDA OOM, …) | SSE `error` frame | Error, never disguised as an empty answer |
 
-这样设计是为了避免「配置错了却以为模型在正常运行」。
+This is deliberate — a misconfiguration should never look like "the model is running fine".
 
 ---
 
-## 斜杠指令
+## Slash commands
 
-服务端无状态，对话历史由本客户端维护并每次全量发送。
+The server is stateless; the client owns the conversation history and resends it every turn.
 
-| 指令 | 作用 |
+| Command | Effect |
 |---|---|
-| `/help` | 能力速查 |
-| `/clear` | **清空本地上下文**（真正清空 `messages`） |
-| `/stats` | 文理双核占比 + Top 宗门 + CUDA Graph 状态 |
-| `/clusters` | 20 宗门命中数与禁闭状态 |
-| `/show_k` | 各层开核数 |
-| `/set_k <层> <核数>` | 单层调频 |
-| `/set_k_all <核数>` | 全局调频 |
-| `/cage <宗门>` | 全局禁闭（清零该宗门全部层权重 + 封杀路由） |
-| `/free <宗门>` | 释放（**总是整宗释放**，见下方说明） |
-| `/snipe <层> <宗门>` | 单层狙击 |
-| `/plug <卡带.pt> [插槽]` | 卡带热插拔 |
-| `/graph` | 切换 CUDA Graph |
-| `/maxlen <n>` | 修改默认回复上限 |
+| `/help` | Capability cheat sheet |
+| `/clear` | **Clear local context** (actually empties `messages`) |
+| `/stats` | Arts/sci split + top clusters + CUDA Graph status |
+| `/clusters` | Hit counts and cage state of the 20 clusters |
+| `/show_k` | Per-layer Top-K |
+| `/set_k <layer> <k>` | Tune one layer |
+| `/set_k_all <k>` | Tune all layers |
+| `/cage <cluster>` | Global cage (zero all layers' weights of that cluster + chill its routing) |
+| `/free <cluster>` | Release (**always releases the whole cluster**, see below) |
+| `/snipe <layer> <cluster>` | Single-layer snipe |
+| `/plug <cartridge.pt> [slot]` | Cartridge hot-plug |
+| `/graph` | Toggle CUDA Graph |
+| `/maxlen <n>` | Change default reply length |
 
-### 关于 cage / snipe / free 的关系
+### How cage / snipe / free relate
 
-服务端把两者存在**同一个状态表**里（`_caged[cid]` 是以层号为 key 的 dict）：
+The server keeps both in the **same state table** (`_caged[cid]` is a dict keyed by layer):
 
-- `cage(cid)` → 写入全部 28 层 = **全局禁闭**
-- `snipe(layer, cid)` → 只写入 1 层 = **单层狙击**
-- `free(cid)` → 恢复该宗门**所有**已记录层，然后整体删除该条目
-- `free(cid, layer)` → **只恢复该层**；若该宗门已无其他层封杀，才整体摘除
+- `cage(cid)` → writes all 28 layers = **global cage**
+- `snipe(layer, cid)` → writes 1 layer = **single-layer snipe**
+- `free(cid)` → restores **all** recorded layers of that cluster, then drops the entry
+- `free(cid, layer)` → restores **only that layer**; the entry is dropped only once no caged layer remains
 
-两种撤销粒度都可用：
+Both release granularities are available:
 
-| 操作 | 端点 | 效果 |
+| Action | Endpoint | Effect |
 |---|---|---|
-| 释放全部 | `POST /v1/myriad/clusters/{cid}/free` | 恢复该宗门所有被封杀层 |
-| 单点解封 | `POST /v1/myriad/clusters/{cid}/free?layer=7` | 只恢复第 7 层 |
+| Release all | `POST /v1/myriad/clusters/{cid}/free` | Restore every caged layer of that cluster |
+| Free one layer | `POST /v1/myriad/clusters/{cid}/free?layer=7` | Restore only layer 7 |
 
-禁闭所面板里每个 `L07 ✕` 按钮就是单点解封；「释放全部」按钮则是整宗释放。层级来源通过服务端新增的 `caged_layer_map` 字段显示，返回值里的 `fully_released` / `still_caged_layers` 可判断是否已彻底释放。
+Each `L07 ✕` button in the cage panel is a single-layer free; the "Release all" button frees the whole cluster. Caged layers are shown via the server's `caged_layer_map` field; `fully_released` / `still_caged_layers` in the response tell whether the release is complete.
 
 ---
 
-## 权限分级（只读令牌）
+## Permission tiers (read-only token)
 
-服务端支持两种令牌：
+The server supports two token kinds:
 
-| 令牌 | 参数 | 权限 |
+| Token | Flag | Permissions |
 |---|---|---|
-| 管理员 | `--api-key` | 全部：遥测 + 神经手术 + 调频 + 热插拔 + 生成 |
-| 只读 | `--read-only-key` | 仅 `GET` 遥测/看板；**所有写操作返回 403** |
+| Admin | `--api-key` | Everything: telemetry + neural surgery + tuning + hot-plug + generation |
+| Read-only | `--read-only-key` | Only `GET` telemetry/board; **every write returns 403** |
 
 ```bash
 python 7.api_myriad_server.py --api-key sk-admin --read-only-key sk-viewer
 ```
 
-`GET /v1/models` 在 `myriad` 字段回报当前令牌等级，客户端据此：
+`GET /v1/models` reports the current token tier in the `myriad` field, and the client accordingly:
 
-- 顶部显示 **只读** 徽章 + 紫色横幅说明受限范围
-- **禁用**所有写按钮（关禁闭 / 释放 / 狙击 / 单层解封 / 调频 / 热插拔 / 清零统计 / CUDA Graph 切换）
-- 拦截发送消息，避免发起注定 403 的请求
-- 配置中心「测试连通」直接显示当前令牌是只读还是管理员
+- Shows a **Read-only** badge + purple banner explaining the limits
+- **Disables** all write buttons (cage / release / snipe / single-layer free / tuning / hot-plug / stats reset / CUDA Graph toggle)
+- Blocks message sending to avoid doomed 403 requests
+- The Settings "Test" button directly reports whether the current token is read-only or admin
 
-服务端未配置任何 key 时，前端显示 **未鉴权** 徽章，提醒任何人都能操作。
+When the server has no key configured, the UI shows a **No auth** badge as a reminder that anyone can operate it.
 
-## 卡带上传
+## Cartridge upload
 
-禁闭所面板的热插拔支持两种来源：
+Hot-plug in the cage panel supports two sources:
 
-- **本地文件上传** —— 选 `.pt` 文件经 multipart 直传（带上传进度条）
-- **服务端路径** —— 填服务端进程工作目录下的文件名
+- **Local file upload** — pick a `.pt` file, uploaded via multipart with a progress bar
+- **Server path** — a filename under the server process working directory
 
-上传受 `--max-cartridge-mb` 限制（默认 512MB），超出返回 413 并在前端给出可读提示。文件名只用于展示与记录，不参与路径拼接，服务端会做 `basename` 净化。
-
----
-
-## 上下文滑动窗口
-
-服务端无状态，客户端每次都把历史发过去。为避免 prompt 无限膨胀，发送前自动裁剪为：
-
-```
-[system 提示词（始终保留）] + 最近 N 轮对话
-```
-
-一轮 = 一个 user 消息 + 其后连续的 assistant 消息。`N` 默认 **10**，可在配置中心调 **4~30**。
-
-同时自动剔除：本地提示（错误回显、`/clear` 确认语）、内容为空的 assistant 消息（生成被中断时残留，部分 chat template 会因此报错）、仍在流式输出的占位。
-
-发生裁剪时输入框下方会显示 `上下文 10/10 轮 · 已裁掉 N 条`。
+Uploads are capped by `--max-cartridge-mb` (default 512 MB); over-limit uploads return 413 with a readable message. The filename is display/record only and never used for path joining — the server sanitizes it with `basename`.
 
 ---
 
-## 本次问答遥测
+## Context sliding window
 
-客户端固定下发 `myriad: { stats: true }`，服务端在流式响应的**最后一帧**（`[DONE]` 之前）附带本次请求专属的遥测：
+The server is stateless, so the client resends history every turn. To keep prompts from growing forever, history is trimmed before sending to:
+
+```
+[system prompt (always kept)] + latest N rounds
+```
+
+One round = one user message + the assistant messages that follow it. `N` defaults to **10**, adjustable **4–30** in Settings.
+
+Also stripped automatically: local notes (error echoes, `/clear` confirmations), empty assistant messages (leftovers from interrupted generation — some chat templates choke on them), and in-flight streaming placeholders.
+
+When trimming happens, a `Context 10/10 rounds · trimmed N` note appears under the input box.
+
+---
+
+## Per-answer telemetry
+
+The client always sends `myriad: { stats: true }`, and the server attaches request-scoped telemetry in the **last frame** of the stream (before `[DONE]`):
 
 ```json
 {"choices": [], "usage": {...},
@@ -177,79 +180,85 @@ python 7.api_myriad_server.py --api-key sk-admin --read-only-key sk-viewer
             "cuda_graph": true, "top_clusters": [...]}}
 ```
 
-聊天区每条回答底部会显示一条遥测带：本次文理双核占比条、CUDA Graph 状态、主导宗门（禁闭中的会加删除线）。
+Every answer in the chat area carries a telemetry strip at the bottom: arts/sci split bar, CUDA Graph state, dominant clusters (caged ones struck through).
 
 ---
 
-## 配置项
+## Settings reference
 
-| 字段 | 默认 | 说明 |
+| Field | Default | Notes |
 |---|---|---|
-| `baseUrl` | `http://127.0.0.1:8000/v1` | 必须含 `/v1` |
-| `apiKey` | 空 | 后端 `--api-key` 开启时必填 |
-| `model` | `myriad-moe-25k-lora` | 对应服务端 `SERVED_MODEL_ID` |
-| `systemPrompt` | 空 | 始终置于上下文首条；留空则不发送 system 消息 |
-| `contextRounds` | 10 | 上下文保留轮数（4~30） |
+| `baseUrl` | `http://127.0.0.1:8000/v1` | Must include `/v1` |
+| `apiKey` | empty | Required when backend `--api-key` is on |
+| `model` | `myriad-moe-25k-lora` | Matches server `SERVED_MODEL_ID` |
+| `systemPrompt` | empty | Always first in context; empty = no system message sent |
+| `contextRounds` | 10 | Context rounds to keep (4–30) |
 | `temperature` | 0.7 | |
 | `topP` | 0.9 | |
-| `maxTokens` | 1024 | 服务端会 clamp 到 `[1, 8192]` |
-| `repetitionPenalty` | 1.15 | 服务端原生默认 |
-| `splitReasoning` | true | 把 `<think>` 分流到 `reasoning_content` |
-| `pollIntervalMs` | 5000 | 看板轮询间隔；**生成期间自动暂停** |
-| `mockFallback` | false | 见上文 |
-| `focusClusters` | `[]` | 非空时，本次请求未列出的宗门被临时打入冷宫 |
-| `topKOverride` | `null` | 请求级 Top-K 覆盖 |
+| `maxTokens` | 1024 | Server clamps to `[1, 8192]` |
+| `repetitionPenalty` | 1.15 | Server native default |
+| `splitReasoning` | true | Split `<think>` into `reasoning_content` |
+| `pollIntervalMs` | 5000 | Board poll interval; **auto-pauses while generating** |
+| `mockFallback` | false | See above |
+| `focusClusters` | `[]` | Non-empty: unlisted clusters are chilled for this request |
+| `topKOverride` | `null` | Per-request Top-K override |
 
-配置与聊天历史都存在 `localStorage`。
-
----
-
-## 已知约束
-
-- **单槽位解码**：服务端一次只处理一个生成请求，并发请求会排队（看板可见 `waiting_requests`）。
-- **看板轮询会占用 GPU**：`/v1/myriad/stats` 在服务端做 28 次 `.cpu()` 同步拷贝。因此客户端在生成期间暂停轮询，间隔默认 5s。调得太激进会拖慢吐字。
-- **流式遥测也含一次 `dashboard()`**：每条回答末尾的遥测帧会让服务端额外做一次统计快照（每请求 1 次，比原先每 2 秒轮询一次更省）。
-- **遥测里的 `slot_state` 可能是 `busy`**：该字段在响应尚未关闭时读取，此时生成线程的信号量还没归还。看板下一次轮询会自动纠正。
-- **`127.0.0.1` 指浏览器所在机器**：从别的电脑访问前端时，需把 Base URL 改成后端真实 IP。
-- **历史只保留最近 N 轮**：受上下文滑动窗口限制，更早的内容模型已经看不到。
+Settings and chat history are stored in `localStorage`.
 
 ---
 
-## 开发
+## UI language
+
+The top bar has a 中/EN toggle; the choice persists in `localStorage` (`myriad_lang`, defaults to the browser language). It covers all UI chrome, banners, toasts and error hints. Model-generated content itself is never translated.
+
+---
+
+## Known constraints
+
+- **Single-slot decoding**: the server handles one generation request at a time; concurrent requests queue (`waiting_requests` visible on the board).
+- **Board polling costs GPU**: `/v1/myriad/stats` does 28 synchronous `.cpu()` copies server-side. So the client pauses polling while generating, default interval 5 s. Polling too aggressively slows down token streaming.
+- **Streaming telemetry also runs one `dashboard()`**: the telemetry frame at the end of each answer costs one extra stats snapshot per request (cheaper than the old 2 s polling).
+- **`slot_state` may read `busy`**: it is sampled before the response closes, while the generation thread hasn't released its semaphore yet. The next board poll self-corrects.
+- **`127.0.0.1` means the browser's machine**: when opening the UI from another computer, point Base URL at the backend's real IP.
+- **Only the latest N rounds are visible to the model**: limited by the context sliding window.
+
+---
+
+## Development
 
 ```bash
 npm run typecheck      # tsc --noEmit
-npm run verify         # typecheck + 全部前端逻辑测试
-npm run build          # 产物在 dist/
+npm run verify         # typecheck + all frontend logic tests
+npm run build          # output in dist/
 npm run preview
 ```
 
-### 测试分层
+### Test layers
 
-| 命令 | 覆盖内容 | 依赖后端 |
+| Command | Covers | Needs backend |
 |---|---|---|
-| `npm run verify:client` | 错误分流、SSE 解析、公式渲染、上下文滑动窗口 | 否 |
-| `npm run verify:server` | API 契约（路由 / 鉴权 / CORS / 错误码 / 流式遥测）、加载期行为、轮询策略 | 是 |
+| `npm run verify:client` | Error routing, SSE parsing, math rendering, context window | No |
+| `npm run verify:server` | API contract (routes / auth / CORS / error codes / streaming telemetry), loading-phase behavior, polling policy | Yes |
 
-`verify:server` 需要 `7.api_myriad_server.py`。默认向上级目录查找，也可用环境变量指定：
+`verify:server` needs `7.api_myriad_server.py`. It looks in the parent directory by default, or take a path from the environment:
 
 ```bash
 MYRIAD_SERVER=/path/to/7.api_myriad_server.py npm run verify:server
 ```
 
-找不到时会**自动跳过**并打印说明（退出码 0），因此独立克隆本仓库时 `npm run verify` 不会失败。它还会用到 `fastapi` 与 `torch`，请在安装了后端依赖的 Python 环境下运行。
+It **skips gracefully** with an explanation (exit 0) when not found, so `npm run verify` won't fail on a standalone clone. It also needs `fastapi` and `torch` — run it in a Python env with the backend deps installed.
 
-技术栈：React 19 + TypeScript + Vite 8 + Tailwind CSS 4。KaTeX 与字体样式均为**本地依赖**，不依赖任何 CDN（内网环境可用）。
+Stack: React 19 + TypeScript + Vite 8 + Tailwind CSS 4. KaTeX and fonts are **local dependencies**, no CDN required (works on intranets).
 
 ---
 
-## ⚖️ 开源协议
+## ⚖️ License
 
-本项目采用 **[Apache-2.0 开源协议](LICENSE)**，与后端
-[Myriad-MoE-25K-Micro-Experts](https://github.com/aifeifei798/Myriad-MoE-25K-Micro-Experts) 保持一致。
-允许学术研究与商业应用，转载或衍生使用请保留原作者署名。
+This project is **[Apache-2.0](LICENSE)**, matching the backend
+[Myriad-MoE-25K-Micro-Experts](https://github.com/aifeifei798/Myriad-MoE-25K-Micro-Experts).
+Academic and commercial use allowed; please keep the original attribution when reposting or deriving.
 
-## 📖 引用
+## 📖 Citation
 
 ```bibtex
 @misc{feifei2026myriadconsole,

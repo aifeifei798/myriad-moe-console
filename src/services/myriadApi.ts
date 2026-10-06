@@ -7,7 +7,7 @@ import {
 } from '../types/myriad';
 import { mockState } from './mockEngine';
 import { mockSession } from './mockSession';
-import { MyriadApiError, describeTransportError, extractDetail } from './apiError';
+import { MyriadApiError, describeTransportError, extractDetail, type Lang } from './apiError';
 
 /** 统一的请求头。带 apiKey 时附带 Bearer token。 */
 const DEFAULT_HEADERS = (apiKey?: string) => {
@@ -84,6 +84,7 @@ function canFallback(err: unknown, config: ClientConfig): boolean {
  */
 export async function testConnection(
   config: ClientConfig,
+  lang?: Lang,
 ): Promise<{
   ok: boolean;
   latencyMs: number;
@@ -123,9 +124,9 @@ export async function testConnection(
   } catch (err: any) {
     const latency = Math.round(performance.now() - t0);
     if (err instanceof MyriadApiError) {
-      return { ok: false, latencyMs: latency, error: err.describe(config.baseUrl) };
+      return { ok: false, latencyMs: latency, error: err.describe(config.baseUrl, lang) };
     }
-    return { ok: false, latencyMs: latency, error: err?.message || '连接失败' };
+    return { ok: false, latencyMs: latency, error: err?.message || (lang === 'en' ? 'Connection failed' : '连接失败') };
   }
 }
 

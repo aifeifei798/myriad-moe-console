@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { marked } from 'marked';
 import { Check, Copy } from 'lucide-react';
 import { renderMath } from '../lib/mathRender';
+import { useLang } from '../lib/i18n';
 
 interface MarkdownRendererProps {
   content: string;
@@ -46,6 +47,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
 /** 复制按钮，供聊天气泡复用。 */
 export const CopyButton: React.FC<{ text: string; className?: string }> = ({ text, className = '' }) => {
   const [copied, setCopied] = React.useState(false);
+  const { t } = useLang();
   return (
     <button
       type="button"
@@ -55,7 +57,7 @@ export const CopyButton: React.FC<{ text: string; className?: string }> = ({ tex
         setTimeout(() => setCopied(false), 2000);
       }}
       className={className}
-      title="复制"
+      title={t('common.copy')}
     >
       {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
     </button>

@@ -5,6 +5,7 @@ import { testConnection } from '../services/myriadApi';
 import { MyriadApiError } from '../services/apiError';
 import { useClusterNames, useModelShape } from '../services/mockEngine';
 import { MIN_ROUNDS, MAX_ROUNDS, DEFAULT_ROUNDS, clampRounds } from '../lib/contextWindow';
+import { useLang } from '../lib/i18n';
 
 interface ConfigModalProps {
   isOpen: boolean;
@@ -23,6 +24,7 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
   capability,
   onSaveConfig,
 }) => {
+  const { t, lang } = useLang();
   const [formData, setFormData] = useState<ClientConfig>({ ...config });
   const [showApiKey, setShowApiKey] = useState<boolean>(false);
   const [testResult, setTestResult] = useState<{
@@ -47,7 +49,7 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
   const handleTest = async () => {
     setIsTesting(true);
     setTestResult(null);
-    const result = await testConnection(formData);
+    const result = await testConnection(formData, lang);
     setTestResult(result);
     setIsTesting(false);
   };
@@ -74,8 +76,8 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
               <Settings className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-slate-100">Myriad-MoE 连接与推理配置</h3>
-              <p className="text-[11px] text-slate-400">OpenAI 兼容端点及神经扩展控制</p>
+              <h3 className="text-sm font-semibold text-slate-100">{t('cfg.title')}</h3>
+              <p className="text-[11px] text-slate-400">{t('cfg.subtitle')}</p>
             </div>
           </div>
           <button onClick={onClose} className="p-1 rounded-md text-slate-400 hover:text-slate-200 hover:bg-slate-800">
@@ -88,8 +90,8 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
           {/* Base URL */}
           <div className="space-y-1.5">
             <label className="text-slate-300 font-medium flex justify-between">
-              <span>API Base URL</span>
-              <span className="text-[10px] text-slate-500">需包含 /v1 前缀</span>
+              <span>{t('cfg.baseUrl')}</span>
+              <span className="text-[10px] text-slate-500">{t('cfg.baseUrlHint')}</span>
             </label>
             <div className="flex gap-2">
               <input
@@ -110,7 +112,7 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
                 ) : (
                   <ShieldCheck className="w-3.5 h-3.5" />
                 )}
-                测试连通
+                {t('cfg.testConn')}
               </button>
             </div>
 
@@ -126,25 +128,25 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
                   <span className="min-w-0 break-words">
                     {testResult.ok ? (
                       <>
-                        ✅ 连通成功 ({testResult.latencyMs}ms)
+                        {t('cfg.connOk', { ms: testResult.latencyMs })}
                         {testResult.model ? ` · ${testResult.model}` : ''}
                         {testResult.capability?.permission === 'read' && (
                           <span className="ml-1 text-amber-300">
-                            · 只读令牌（写操作会被 403 拒绝）
+                            {t('cfg.capReadonly')}
                           </span>
                         )}
                         {testResult.capability?.permission === 'admin' && (
-                          <span className="ml-1 text-emerald-300">· 管理员令牌</span>
+                          <span className="ml-1 text-emerald-300">{t('cfg.capAdmin')}</span>
                         )}
                         {testResult.capability?.authRequired === false && (
-                          <span className="ml-1 text-amber-300">· 服务端未开启鉴权</span>
+                          <span className="ml-1 text-amber-300">{t('cfg.capNoAuth')}</span>
                         )}
                         {testResult.capability?.ready === false && (
-                          <span className="ml-1 text-sky-300">· 模型仍在加载</span>
+                          <span className="ml-1 text-sky-300">{t('cfg.capLoading')}</span>
                         )}
                       </>
                     ) : (
-                      `❌ 连通失败: ${testResult.error}`
+                      t('cfg.connFail', { e: testResult.error ?? '' })
                     )}
                   </span>
                 </div>
@@ -155,13 +157,13 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
           {/* API Key */}
           <div className="space-y-1.5">
             <label className="text-slate-300 font-medium flex justify-between">
-              <span>API Key</span>
+              <span>{t('cfg.apiKey')}</span>
               <span className="text-[10px] text-slate-500">
                 {capability?.permission === 'read'
-                  ? '当前：只读令牌'
+                  ? t('cfg.apiKeyReadonly')
                   : capability?.permission === 'admin'
-                    ? '当前：管理员令牌'
-                    : '服务端未开鉴权时可留空'}
+                    ? t('cfg.apiKeyAdmin')
+                    : t('cfg.apiKeyNone')}
               </span>
             </label>
             <div className="relative">
@@ -169,7 +171,7 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
                 type={showApiKey ? 'text' : 'password'}
                 value={formData.apiKey}
                 onChange={e => setFormData({ ...formData, apiKey: e.target.value })}
-                placeholder="sk-myriad (可选)"
+                placeholder={t('cfg.apiKeyPh')}
                 className="w-full bg-[#121929] border border-slate-800 rounded-lg px-3 py-2 pr-10 text-slate-200 focus:border-cyan-500 focus:outline-none"
               />
               <button
@@ -184,7 +186,7 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
 
           {/* Model */}
           <div className="space-y-1.5">
-            <label className="text-slate-300 font-medium">模型标识 (Model ID)</label>
+            <label className="text-slate-300 font-medium">{t('cfg.modelId')}</label>
             <input
               type="text"
               value={formData.model}
@@ -196,14 +198,14 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
           {/* System Prompt */}
           <div className="space-y-1.5">
             <label className="text-slate-300 font-medium flex justify-between">
-              <span>System 提示词</span>
-              <span className="text-[10px] text-slate-500">始终置于上下文首条</span>
+              <span>{t('cfg.systemPrompt')}</span>
+              <span className="text-[10px] text-slate-500">{t('cfg.systemPromptHint')}</span>
             </label>
             <textarea
               value={formData.systemPrompt}
               onChange={e => setFormData({ ...formData, systemPrompt: e.target.value })}
               rows={3}
-              placeholder="留空则不发送 system 消息。例：你是一个擅长数学推导的助手。"
+              placeholder={t('cfg.systemPromptPh')}
               className="w-full bg-[#121929] border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:border-cyan-500 focus:outline-none resize-none leading-relaxed"
             />
           </div>
@@ -211,8 +213,8 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
           {/* 上下文保留轮数 */}
           <div className="space-y-1.5">
             <label className="text-slate-300 font-medium flex justify-between">
-              <span>上下文保留轮数</span>
-              <span className="text-[10px] text-cyan-400 font-bold">{formData.contextRounds} 轮</span>
+              <span>{t('cfg.ctxRounds')}</span>
+              <span className="text-[10px] text-cyan-400 font-bold">{t('cfg.ctxRoundsUnit', { n: formData.contextRounds })}</span>
             </label>
             <input
               type="range"
@@ -224,13 +226,12 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
               className="w-full accent-cyan-400"
             />
             <div className="flex justify-between text-[9px] text-slate-400 font-mono">
-              <span>{MIN_ROUNDS} (省算力)</span>
-              <span>默认 {DEFAULT_ROUNDS}</span>
-              <span>{MAX_ROUNDS} (长记忆)</span>
+              <span>{t('cfg.ctxMin', { n: MIN_ROUNDS })}</span>
+              <span>{t('cfg.ctxDefault', { n: DEFAULT_ROUNDS })}</span>
+              <span>{t('cfg.ctxMax', { n: MAX_ROUNDS })}</span>
             </div>
             <p className="text-[10px] text-slate-500 leading-relaxed">
-              发送时只保留 System + 最近 {clampRounds(formData.contextRounds)} 轮，其余历史会被裁掉。
-              服务端无状态，过长的 prompt 会挤占 KV 缓存并拖慢首字延迟。
+              {t('cfg.ctxDesc', { n: clampRounds(formData.contextRounds) })}
             </p>
           </div>
 
@@ -271,7 +272,7 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
           {/* Max Tokens / Rep Penalty */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <span className="text-slate-300">最大回复 Tokens</span>
+              <span className="text-slate-300">{t('cfg.maxTokens')}</span>
               <input
                 type="number"
                 min="64"
@@ -283,7 +284,7 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
               />
             </div>
             <div className="space-y-1">
-              <span className="text-slate-300">重复惩罚 (Rep Penalty)</span>
+              <span className="text-slate-300">{t('cfg.repPenalty')}</span>
               <input
                 type="number"
                 min="1.0"
@@ -301,21 +302,21 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
           {/* 遥测轮询间隔 */}
           <div className="space-y-1.5">
             <label className="text-slate-300 font-medium flex justify-between">
-              <span>看板轮询间隔</span>
-              <span className="text-[10px] text-slate-500">生成期间自动暂停</span>
+              <span>{t('cfg.pollInterval')}</span>
+              <span className="text-[10px] text-slate-500">{t('cfg.pollPause')}</span>
             </label>
             <select
               value={formData.pollIntervalMs}
               onChange={e => setFormData({ ...formData, pollIntervalMs: Number(e.target.value) })}
               className="w-full bg-[#121929] border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:border-cyan-500 focus:outline-none"
             >
-              <option value={2000}>2 秒 (较激进)</option>
-              <option value={5000}>5 秒 (推荐)</option>
-              <option value={10000}>10 秒</option>
-              <option value={30000}>30 秒 (低功耗)</option>
+              <option value={2000}>{t('cfg.poll2')}</option>
+              <option value={5000}>{t('cfg.poll5')}</option>
+              <option value={10000}>{t('cfg.poll10')}</option>
+              <option value={30000}>{t('cfg.poll30')}</option>
             </select>
             <p className="text-[10px] text-slate-500 leading-relaxed">
-              统计端点会在服务端做同步 GPU 操作，间隔过短会拖慢流式吐字。
+              {t('cfg.pollDesc')}
             </p>
           </div>
 
@@ -323,8 +324,8 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
           <div className="space-y-2 pt-2 border-t border-slate-800/80">
             <label className="flex items-center justify-between p-2 rounded-lg bg-[#121929] border border-slate-800/80 cursor-pointer">
               <div>
-                <span className="text-slate-200 font-medium block">独立思维链分流 (Split Reasoning)</span>
-                <span className="text-[10px] text-slate-400">将 &lt;think&gt; 解析为 reasoning_content 折叠卡片</span>
+                <span className="text-slate-200 font-medium block">{t('cfg.splitTitle')}</span>
+                <span className="text-[10px] text-slate-400">{t('cfg.splitDesc')}</span>
               </div>
               <input
                 type="checkbox"
@@ -336,10 +337,9 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
 
             <label className="flex items-start justify-between p-2 rounded-lg bg-[#121929] border border-slate-800/80 cursor-pointer gap-3">
               <div className="min-w-0">
-                <span className="text-slate-200 font-medium block">离线演示兜底 (Mock Fallback)</span>
+                <span className="text-slate-200 font-medium block">{t('cfg.mockTitle')}</span>
                 <span className="text-[10px] text-slate-400 leading-relaxed block mt-0.5">
-                  <b className="text-amber-300">仅在无法连接服务时</b>启用虚拟推理机。
-                  API Key 错误、地址错误、模型未就绪等真实错误<b className="text-rose-300">不会</b>被兜底，会如实报错。
+                  {t('cfg.mockDesc')}
                 </span>
               </div>
               <input
@@ -353,7 +353,7 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
             {formData.mockFallback && (
               <div className="flex items-start gap-2 p-2 rounded-lg bg-amber-950/30 border border-amber-800/50 text-[10px] text-amber-200">
                 <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                <span>兜底启用时，所有回答与看板数值都会标注「模拟数据」横幅，请勿据此评估模型表现。</span>
+                <span>{t('cfg.mockWarn')}</span>
               </div>
             )}
           </div>
@@ -362,11 +362,11 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
           <div className="space-y-1.5 pt-2 border-t border-slate-800/80">
             <div className="flex justify-between items-center">
               <div>
-                <span className="text-slate-200 font-medium block">限定参战宗门 (Focus Clusters)</span>
+                <span className="text-slate-200 font-medium block">{t('cfg.focusTitle')}</span>
                 <span className="text-[10px] text-slate-400">
                   {formData.focusClusters.length === 0
-                    ? `默认全部 ${clusters} 宗门参战`
-                    : `已限定 ${formData.focusClusters.length} 个宗门（其余将被临时打入冷宫）`}
+                    ? t('cfg.focusAll', { c: clusters })
+                    : t('cfg.focusSome', { n: formData.focusClusters.length })}
                 </span>
               </div>
               {formData.focusClusters.length > 0 && (
@@ -375,7 +375,7 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
                   onClick={() => setFormData({ ...formData, focusClusters: [] })}
                   className="text-[10px] text-cyan-400 hover:underline shrink-0"
                 >
-                  清空限定
+                  {t('cfg.focusClear')}
                 </button>
               )}
             </div>
@@ -400,7 +400,7 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
               })}
             </div>
             <p className="text-[10px] text-slate-500">
-              生效范围：当前 {layers} 层 · 请求级临时覆盖，不改变禁闭所状态。
+              {t('cfg.focusScope', { l: layers })}
             </p>
           </div>
         </div>
@@ -412,14 +412,14 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
             onClick={onClose}
             className="px-4 py-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 text-xs transition-colors"
           >
-            取消
+            {t('common.cancel')}
           </button>
           <button
             type="button"
             onClick={handleSave}
             className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-medium text-xs transition-colors"
           >
-            保存并应用配置
+            {t('cfg.save')}
           </button>
         </div>
       </div>

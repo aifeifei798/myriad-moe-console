@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronDown, ChevronRight, BrainCircuit, Activity } from 'lucide-react';
 import { MarkdownRenderer } from './MarkdownRenderer';
+import { useLang } from '../lib/i18n';
 
 interface DeepThinkingCardProps {
   reasoning: string;
@@ -15,6 +16,7 @@ export const DeepThinkingCard: React.FC<DeepThinkingCardProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState<boolean>(true);
   const [elapsed, setElapsed] = useState<number>(thinkingTime || 0);
+  const { t } = useLang();
 
   useEffect(() => {
     let timer: ReturnType<typeof setInterval> | undefined;
@@ -54,11 +56,11 @@ export const DeepThinkingCard: React.FC<DeepThinkingCardProps> = ({
           <span className="font-medium text-slate-200 tracking-wide flex items-center gap-1.5 truncate">
             {isStreaming ? (
               <>
-                <span className="text-cyan-400">深度思考中...</span>
+                <span className="text-cyan-400">{t('thinking.active')}</span>
                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
               </>
             ) : (
-              <span className="text-slate-300">已完成深度思维链推演</span>
+              <span className="text-slate-300">{t('thinking.done')}</span>
             )}
           </span>
 
@@ -69,7 +71,7 @@ export const DeepThinkingCard: React.FC<DeepThinkingCardProps> = ({
 
         <div className="flex items-center gap-2 text-slate-400 shrink-0">
           <span className="text-[11px] text-slate-500 hidden sm:inline">
-            {isOpen ? '收起思维链' : '展开思维链'}
+            {isOpen ? t('thinking.collapse') : t('thinking.expand')}
           </span>
           {isOpen ? (
             <ChevronDown className="w-4 h-4 text-slate-400 transition-transform" />
