@@ -8,7 +8,7 @@ Web client for the Myriad-MoE 25,200 micro-expert model, talking to an OpenAI-co
 - **Right**: holographic neural introspection board — arts/sci core split, cluster heatmap, cage / single-layer snipe, elastic Top-K, per-layer radar, cartridge hot-plug
 - **Language**: 中文 / English toggle in the top bar (persisted in `localStorage`)
 
-> This repo contains **only the frontend**. The backend inference service and model weights (`myriad_*.pt`) live elsewhere and must be deployed separately.
+> This repo contains **only the frontend**. The backend inference service and model weights (`myriad_*.pt`, see [🤗 Hugging Face](https://huggingface.co/aifeifei798/Myriad-MoE-25K-Micro-Experts)) live elsewhere and must be deployed separately.
 
 ---
 

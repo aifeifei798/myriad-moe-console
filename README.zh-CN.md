@@ -8,7 +8,7 @@ Myriad-MoE 25,200 微专家大模型的 Web 客户端，对接一个 OpenAI 兼�
 - **右侧**：全息神经透视看板 —— 文理双核占比、宗门热力、禁闭所 / 单层狙击、弹性开核、逐层雷达、卡带热插拔
 - **语言**：顶栏 中/EN 一键切换（偏好存 `localStorage`）
 
-> 本仓库**只含前端**。后端推理服务与模型权重（`myriad_*.pt`）不在这里，需要单独部署。
+> 本仓库**只含前端**。后端推理服务与模型权重（`myriad_*.pt`，见 [🤗 Hugging Face](https://huggingface.co/aifeifei798/Myriad-MoE-25K-Micro-Experts)）不在这里，需要单独部署。
 
 ---
 
